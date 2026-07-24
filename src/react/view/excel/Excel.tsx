@@ -525,14 +525,16 @@ function ExcelViewer() {
                 </div>
             </Modal>
             <div id='container'></div>
-            <button
-                type="button"
-                className="dark-mode-toggle"
-                title={adaptiveColorMode ? t('viewer.switchToLightMode') : t('viewer.switchToDarkMode')}
-                onClick={toggleColorMode}
-            >
-                {adaptiveColorMode ? <SunOutlined /> : <MoonOutlined />}
-            </button>
+            {!loading && !loadError && (
+                <button
+                    type="button"
+                    className="dark-mode-toggle"
+                    title={adaptiveColorMode ? t('viewer.switchToLightMode') : t('viewer.switchToDarkMode')}
+                    onClick={toggleColorMode}
+                >
+                    {adaptiveColorMode ? <SunOutlined /> : <MoonOutlined />}
+                </button>
+            )}
             {!loading && !loadError && bottombarEl && createPortal(
                 <div className="excel-bottombar-sponsor">
                     <SponsorBar placement="right" />
