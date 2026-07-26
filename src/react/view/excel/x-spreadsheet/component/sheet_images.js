@@ -92,6 +92,14 @@ function getResizeDirection(target) {
   return null;
 }
 
+function getItemDisplayRect(data, item) {
+  return fitContainRect(
+    data.getImageDisplayRect(item.anchor),
+    item.naturalWidth,
+    item.naturalHeight,
+  );
+}
+
 export default class SheetImages {
   constructor() {
     this.el = h('div', `${cssPrefix}-sheet-images`);
@@ -185,7 +193,7 @@ export default class SheetImages {
 
     const item = this.items[index];
     const { data } = this;
-    const startRect = data.getImageDisplayRect(item.anchor);
+    const startRect = getItemDisplayRect(data, item);
     const startX = evt.clientX;
     const startY = evt.clientY;
     let moved = false;
@@ -222,7 +230,7 @@ export default class SheetImages {
 
     const item = this.items[index];
     const { data } = this;
-    const startRect = data.getImageDisplayRect(item.anchor);
+    const startRect = getItemDisplayRect(data, item);
     const startX = evt.clientX;
     const startY = evt.clientY;
     let resized = false;
@@ -261,7 +269,11 @@ export default class SheetImages {
       const {
         wrapEl, anchor, naturalWidth, naturalHeight,
       } = this.items[i];
-      const rect = fitContainRect(data.getImageDisplayRect(anchor), naturalWidth, naturalHeight);
+      const rect = getItemDisplayRect(data, {
+        anchor,
+        naturalWidth,
+        naturalHeight,
+      });
       if (rect.width <= 0 || rect.height <= 0) {
         wrapEl.hide();
         continue;
