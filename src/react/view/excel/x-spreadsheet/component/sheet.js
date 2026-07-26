@@ -1443,6 +1443,10 @@ export default class Sheet {
     this.sheetImages.setOnChange(() => {
       this.trigger('change');
     });
+    this.sheetImages.setOnSelect(() => {
+      this.editor.clear();
+      this.selector.hide();
+    });
     this.overlayerCEl = h('div', `${cssPrefix}-overlayer-content`)
       .children(
         this.sheetImages.el,

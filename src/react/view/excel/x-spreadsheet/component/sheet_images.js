@@ -56,6 +56,30 @@ function resizeRect(l, t, w, h, dx, dy, dir) {
   return { l: nl, t: nt, w: nw, h: nh };
 }
 
+function fitContainRect(rect, naturalWidth, naturalHeight) {
+  if (!naturalWidth || !naturalHeight) return rect;
+  const rectRatio = rect.width / rect.height;
+  const imageRatio = naturalWidth / naturalHeight;
+  if (!Number.isFinite(rectRatio) || !Number.isFinite(imageRatio)) return rect;
+  if (Math.abs(rectRatio - imageRatio) < 0.001) return rect;
+  if (rectRatio > imageRatio) {
+    const width = rect.height * imageRatio;
+    return {
+      ...rect,
+      left: rect.left + (rect.width - width) / 2,
+      l: rect.l + (rect.width - width) / 2,
+      width,
+    };
+  }
+  const height = rect.width / imageRatio;
+  return {
+    ...rect,
+    top: rect.top + (rect.height - height) / 2,
+    t: rect.t + (rect.height - height) / 2,
+    height,
+  };
+}
+
 function getResizeDirection(target) {
   if (!target || !target.classList) return null;
   const prefix = `${cssPrefix}-sheet-image-handle-`;
@@ -75,6 +99,7 @@ export default class SheetImages {
     this.data = null;
     this.editable = false;
     this.onChange = null;
+    this.onSelect = null;
     this.selectedIndex = -1;
   }
 
@@ -85,6 +110,10 @@ export default class SheetImages {
 
   setOnChange(fn) {
     this.onChange = fn;
+  }
+
+  setOnSelect(fn) {
+    this.onSelect = fn;
   }
 
   clearSelection() {
@@ -105,6 +134,7 @@ export default class SheetImages {
     if (index < 0 || index >= this.items.length) return;
     this.selectedIndex = index;
     this.items[index].wrapEl.addClass('selected');
+    if (this.onSelect) this.onSelect();
     this.updatePositions();
   }
 
@@ -122,6 +152,12 @@ export default class SheetImages {
         .attr('draggable', 'false')
         .attr('alt', '');
       wrapEl.child(imgEl);
+      const item = { wrapEl, imgEl, anchor: image.anchor, naturalWidth: 0, naturalHeight: 0 };
+      imgEl.on('load', () => {
+        item.naturalWidth = imgEl.el.naturalWidth;
+        item.naturalHeight = imgEl.el.naturalHeight;
+        this.updatePositions();
+      });
       if (this.editable) {
         for (let hi = 0; hi < RESIZE_HANDLES.length; hi += 1) {
           const dir = RESIZE_HANDLES[hi];
@@ -137,7 +173,7 @@ export default class SheetImages {
         });
       }
       this.el.child(wrapEl);
-      this.items.push({ wrapEl, imgEl, anchor: image.anchor });
+      this.items.push(item);
     }
     this.updatePositions();
   }
@@ -222,8 +258,10 @@ export default class SheetImages {
     if (!data) return;
     this.data = data;
     for (let i = 0; i < this.items.length; i += 1) {
-      const { wrapEl, anchor } = this.items[i];
-      const rect = data.getImageDisplayRect(anchor);
+      const {
+        wrapEl, anchor, naturalWidth, naturalHeight,
+      } = this.items[i];
+      const rect = fitContainRect(data.getImageDisplayRect(anchor), naturalWidth, naturalHeight);
       if (rect.width <= 0 || rect.height <= 0) {
         wrapEl.hide();
         continue;
