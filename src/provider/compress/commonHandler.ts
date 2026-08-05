@@ -25,7 +25,7 @@ export function shouldSkipFileChange(uri: Uri): boolean {
 function setDirty(handler: Handler, uri: Uri, dirty: boolean) {
     const panel = handler.panel;
     const fileName = basename(uri.fsPath);
-    panel.title = dirty ? `● ${fileName}` : fileName;
+    panel.title = dirty ? `${fileName}*` : fileName;
     if (dirty) {
         void vscode.commands.executeCommand('workbench.action.keepEditor');
     }
