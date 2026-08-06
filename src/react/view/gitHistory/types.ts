@@ -72,6 +72,8 @@ export interface GitFileChange {
     type: string;
     additions: number | null;
     deletions: number | null;
+    oldRef?: string;
+    newRef?: string;
 }
 
 export interface GitCommitDetails {

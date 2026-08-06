@@ -317,12 +317,14 @@ export function runContextMenuAction(
             break;
         case 'viewDiff':
             if (meta._change && meta._hash) {
-                const parent = meta._hasParents ? `${meta._hash}^` : EMPTY_TREE_HASH;
+                const parent = meta._hash === UNCOMMITTED
+                    ? UNCOMMITTED
+                    : meta._change.oldRef ?? (meta._hasParents ? `${meta._hash}^` : EMPTY_TREE_HASH);
                 emit({
                     action: 'viewDiff',
                     repo,
                     fromHash: parent,
-                    toHash: meta._hash,
+                    toHash: meta._hash === UNCOMMITTED ? UNCOMMITTED : meta._change.newRef ?? meta._hash,
                     oldFilePath: meta._change.oldFilePath,
                     newFilePath: meta._change.newFilePath,
                     type: meta._change.type,
@@ -336,7 +338,12 @@ export function runContextMenuAction(
             break;
         case 'viewFileAtRevision':
             if (meta._hash && meta._path) {
-                emit({ action: 'viewFileAtRevision', repo, hash: meta._hash, filePath: meta._path });
+                emit({
+                    action: 'viewFileAtRevision',
+                    repo,
+                    hash: meta._change?.newRef ?? meta._hash,
+                    filePath: meta._path,
+                });
             }
             break;
         case 'openFile':

@@ -351,7 +351,8 @@ export class MessageRouter {
         const data = await this.commitService.getCommitDetails(
             payload.repo,
             payload.commitHash,
-            payload.hasParents
+            payload.hasParents,
+            payload.stash
         );
         this.handler.emit('commitDetails', data);
     }

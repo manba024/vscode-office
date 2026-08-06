@@ -37,12 +37,12 @@ export function buildViewDiffAction(
             type: change.type,
         };
     }
-    const parent = hasParents ? `${commitHash}^` : EMPTY_TREE_HASH;
+    const parent = change.oldRef ?? (hasParents ? `${commitHash}^` : EMPTY_TREE_HASH);
     return {
         action: 'viewDiff',
         repo,
         fromHash: parent,
-        toHash: commitHash,
+        toHash: change.newRef ?? commitHash,
         oldFilePath: change.oldFilePath,
         newFilePath: change.newFilePath,
         type: change.type,
@@ -57,7 +57,7 @@ export function buildViewFileAtRevisionAction(
     return {
         action: 'viewFileAtRevision',
         repo,
-        hash: commitHash,
+        hash: change.newRef ?? commitHash,
         filePath: getFilePathForActions(change),
     };
 }
