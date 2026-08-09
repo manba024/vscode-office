@@ -1,6 +1,7 @@
 import { convertXmindToMindElixir, importXMindFile } from '@mind-elixir/import-xmind';
 import JSZip from 'jszip';
 import type { MindElixirData, NodeObj } from 'mind-elixir';
+import type { Sheet, Topic } from '@mind-elixir/import-xmind';
 
 export interface XmindSheet {
     id: string;
@@ -11,11 +12,43 @@ export interface XmindSheet {
 export interface XmindDocument {
     sheets: XmindSheet[];
     resolveImageUrl: (url: string) => string;
+    export: (sheets: XmindSheet[]) => Promise<Uint8Array>;
     dispose: () => void;
 }
 
 const XAP_PREFIX = /^xap:(resources|attachments|resource)\//i;
 const RESOURCE_DIRS = ['resources/', 'attachments/'];
+const DEFAULT_SHEET_ID = 'sheet-1';
+const DEFAULT_ROOT_TOPIC_ID = 'root-topic';
+
+type MindArrow = NonNullable<MindElixirData['arrows']>[number];
+type MindSummary = NonNullable<MindElixirData['summaries']>[number];
+
+function createEmptyXmindSheet(): Sheet {
+    return {
+        id: DEFAULT_SHEET_ID,
+        title: 'Sheet 1',
+        rootTopic: {
+            id: DEFAULT_ROOT_TOPIC_ID,
+            title: '',
+        },
+        style: { id: '', type: '', properties: {} },
+        topicPositioning: 'balanced',
+        topicOverlapping: '',
+        theme: { id: '', title: '' },
+        relationships: [],
+        legend: {
+            visibility: 'visible',
+            position: { x: 0, y: 0 },
+            markers: {},
+            groups: {},
+        },
+        settings: {
+            'infoItems/infoItem': [],
+            'tab-color': [],
+        },
+    };
+}
 
 function getMimeType(path: string): string {
     const lower = path.toLowerCase();
@@ -42,10 +75,13 @@ function getMimeType(path: string): string {
 
 async function buildImageResourceMap(buffer: ArrayBuffer): Promise<{
     map: Map<string, string>;
+    reverseMap: Map<string, string>;
     blobUrls: string[];
+    zip: JSZip;
 }> {
     const zip = await JSZip.loadAsync(buffer);
     const map = new Map<string, string>();
+    const reverseMap = new Map<string, string>();
     const blobUrls: string[] = [];
 
     for (const [path, entry] of Object.entries(zip.files)) {
@@ -80,9 +116,10 @@ async function buildImageResourceMap(buffer: ArrayBuffer): Promise<{
         for (const key of variants) {
             map.set(key, blobUrl);
         }
+        reverseMap.set(blobUrl, `xap:${zipPath}`);
     }
 
-    return { map, blobUrls };
+    return { map, reverseMap, blobUrls, zip };
 }
 
 function resolveXapResourceUrl(url: string, map: Map<string, string>): string {
@@ -131,14 +168,130 @@ function patchNodeImages(node: NodeObj, resolve: (url: string) => string): void 
     }
 }
 
-export async function parseXmind(buffer: ArrayBuffer, fileName = 'document.xmind'): Promise<XmindDocument> {
-    const { map, blobUrls } = await buildImageResourceMap(buffer);
-    const resolveImageUrl = (url: string) => resolveXapResourceUrl(url, map);
+function cloneNodeWithoutParent(node: NodeObj): NodeObj {
+    const { parent: _parent, children, ...rest } = node;
+    return {
+        ...rest,
+        ...(children ? { children: children.map(cloneNodeWithoutParent) } : {}),
+    };
+}
 
-    const file = new File([buffer], fileName, { type: 'application/vnd.xmind.workbook' });
-    const sheets = await importXMindFile(file);
+function normalizeTags(tags: NodeObj['tags']): string | undefined {
+    if (!tags?.length) {
+        return undefined;
+    }
+    return tags.map(tag => typeof tag === 'string' ? tag : tag.text).filter(Boolean).join(',');
+}
+
+function mindNodeToXmindTopic(node: NodeObj, restoreImageUrl: (url: string) => string): Topic {
+    const topic: Topic = {
+        id: node.id,
+        title: node.topic ?? 'Untitled',
+    };
+    if (node.expanded === false) {
+        topic.branch = 'folded';
+    }
+    const labels = normalizeTags(node.tags);
+    if (labels) {
+        topic.labels = labels;
+    }
+    if (node.hyperLink) {
+        topic.href = node.hyperLink;
+    }
+    if (node.note) {
+        topic.notes = {
+            plain: { content: node.note },
+            html: { content: { paragraphs: [] } },
+        };
+    }
+    if (node.image?.url) {
+        topic.image = {
+            src: restoreImageUrl(node.image.url),
+            width: node.image.width,
+            height: node.image.height,
+            align: 'center',
+        };
+    }
+    if (node.children?.length) {
+        topic.children = {
+            attached: node.children.map(child => mindNodeToXmindTopic(child, restoreImageUrl)),
+        };
+    }
+    return topic;
+}
+
+function mindArrowsToXmindRelationships(arrows: MindArrow[] | undefined) {
+    if (!arrows?.length) {
+        return [];
+    }
+    return arrows.map(arrow => ({
+        id: arrow.id,
+        title: arrow.label || '',
+        style: { id: '', type: '', properties: {} },
+        class: '',
+        end1Id: arrow.from,
+        end2Id: arrow.to,
+        controlPoints: {
+            0: arrow.delta1 ?? { x: 50, y: 50 },
+            1: arrow.delta2 ?? { x: 50, y: 50 },
+        },
+    }));
+}
+
+function collectSummaryTopics(topic: Topic, summaries: MindSummary[] | undefined): void {
+    if (!summaries?.length) {
+        return;
+    }
+    const topicSummaries = summaries.filter(summary => summary.parent === topic.id);
+    if (topicSummaries.length) {
+        topic.summaries = topicSummaries.map(summary => {
+            const topicId = `${summary.id}-topic`;
+            const summaryTopic: Topic = {
+                id: topicId,
+                title: summary.label || 'summary',
+            };
+            topic.children = topic.children ?? {};
+            topic.children.summary = [...(topic.children.summary ?? []), summaryTopic];
+            return {
+                id: summary.id,
+                style: { id: '', type: '', properties: {} },
+                class: '',
+                range: `(${summary.start},${summary.end})`,
+                topicId,
+            };
+        });
+    }
+    topic.children?.attached?.forEach(child => collectSummaryTopics(child, summaries));
+}
+
+function mindDataToXmindSheet(original: Sheet, sheet: XmindSheet, restoreImageUrl: (url: string) => string): Sheet {
+    const data = {
+        ...sheet.data,
+        nodeData: cloneNodeWithoutParent(sheet.data.nodeData),
+    };
+    const rootTopic = mindNodeToXmindTopic(data.nodeData, restoreImageUrl);
+    collectSummaryTopics(rootTopic, data.summaries);
+    return {
+        ...original,
+        id: sheet.id,
+        title: sheet.title || data.nodeData.topic || original.title || 'Sheet',
+        rootTopic,
+        relationships: mindArrowsToXmindRelationships(data.arrows),
+        topicPositioning: data.direction === 2 ? (original.topicPositioning || 'balanced') : original.topicPositioning,
+    };
+}
+
+function createXmindDocument(
+    sourceSheets: Sheet[],
+    zip: JSZip,
+    map: Map<string, string>,
+    reverseMap: Map<string, string>,
+    blobUrls: string[],
+): XmindDocument {
     const result: XmindSheet[] = [];
-    for (const sheet of sheets) {
+    const resolveImageUrl = (url: string) => resolveXapResourceUrl(url, map);
+    const restoreImageUrl = (url: string) => reverseMap.get(url) ?? url;
+    for (const sheet of sourceSheets) {
         const data = convertXmindToMindElixir(sheet);
         patchNodeImages(data.nodeData, resolveImageUrl);
         result.push({
@@ -151,11 +304,45 @@ export async function parseXmind(buffer: ArrayBuffer, fileName = 'document.xmind
     return {
         sheets: result,
         resolveImageUrl,
+        export: async (nextSheets: XmindSheet[]) => {
+            const sourceById = new Map(sourceSheets.map(sheet => [sheet.id, sheet]));
+            const content = nextSheets.map(sheet => {
+                const source = sourceById.get(sheet.id) ?? sourceSheets[0];
+                return mindDataToXmindSheet(source, sheet, restoreImageUrl);
+            });
+            zip.file('content.json', JSON.stringify(content));
+            zip.file('metadata.json', JSON.stringify({ creator: { name: 'Office Viewer' } }));
+            zip.file('manifest.json', JSON.stringify({
+                'file-entries': {
+                    'content.json': {},
+                    'metadata.json': {},
+                },
+            }));
+            return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+        },
         dispose: () => {
             for (const url of blobUrls) {
                 URL.revokeObjectURL(url);
             }
             map.clear();
+            reverseMap.clear();
         },
     };
+}
+
+export async function parseXmind(buffer: ArrayBuffer, fileName = 'document.xmind'): Promise<XmindDocument> {
+    if (buffer.byteLength === 0) {
+        return createXmindDocument(
+            [createEmptyXmindSheet()],
+            new JSZip(),
+            new Map<string, string>(),
+            new Map<string, string>(),
+            [],
+        );
+    }
+
+    const { map, reverseMap, blobUrls, zip } = await buildImageResourceMap(buffer);
+    const file = new File([buffer], fileName, { type: 'application/vnd.xmind.workbook' });
+    const sourceSheets = await importXMindFile(file);
+    return createXmindDocument(sourceSheets, zip, map, reverseMap, blobUrls);
 }

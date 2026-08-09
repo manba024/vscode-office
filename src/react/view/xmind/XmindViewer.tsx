@@ -1,5 +1,5 @@
-import { MinusOutlined, MoonOutlined, PlusOutlined, SunOutlined } from '@ant-design/icons';
-import { Alert, Button, Layout, Spin } from 'antd';
+import { MinusOutlined, MoonOutlined, PlusOutlined, SaveOutlined, SunOutlined } from '@ant-design/icons';
+import { Alert, Button, Layout, Spin, message } from 'antd';
 import MindElixir, { type MindElixirData, type MindElixirInstance } from 'mind-elixir';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { handler } from '../../util/vscode';
@@ -23,27 +23,70 @@ function detachScaleListener(mind: MindElixirInstance, onScale: (value: number) 
     mind.bus.removeListener('scale', onScale);
 }
 
+function detachOperationListener(mind: MindElixirInstance, onOperation: () => void) {
+    mind.bus.removeListener('operation', onOperation);
+}
+
 export default function XmindViewer() {
     const mapRef = useRef<HTMLDivElement>(null);
     const mindRef = useRef<MindElixirInstance | null>(null);
     const documentRef = useRef<XmindDocument | null>(null);
+    const sheetsRef = useRef<XmindSheet[]>([]);
+    const selectedIdRef = useRef<string | null>(null);
     const scaleHandlerRef = useRef<((value: number) => void) | null>(null);
+    const operationHandlerRef = useRef<(() => void) | null>(null);
     const [sheets, setSheets] = useState<XmindSheet[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [scalePercent, setScalePercent] = useState(100);
     const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [dirty, setDirty] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [dark, setDark] = useState(false);
 
+    useEffect(() => {
+        sheetsRef.current = sheets;
+    }, [sheets]);
+
+    useEffect(() => {
+        selectedIdRef.current = selectedId;
+    }, [selectedId]);
+
     const destroyMind = useCallback(() => {
         const mind = mindRef.current;
-        const handler = scaleHandlerRef.current;
-        if (mind && handler) {
-            detachScaleListener(mind, handler);
+        const scaleHandler = scaleHandlerRef.current;
+        const operationHandler = operationHandlerRef.current;
+        if (mind && scaleHandler) {
+            detachScaleListener(mind, scaleHandler);
+        }
+        if (mind && operationHandler) {
+            detachOperationListener(mind, operationHandler);
         }
         scaleHandlerRef.current = null;
+        operationHandlerRef.current = null;
         mindRef.current?.destroy();
         mindRef.current = null;
+    }, []);
+
+    const syncCurrentSheet = useCallback(() => {
+        const currentMind = mindRef.current;
+        const currentId = selectedIdRef.current;
+        let nextSheets = sheetsRef.current;
+        if (currentMind && currentId) {
+            nextSheets = sheetsRef.current.map(sheet => (
+                sheet.id === currentId
+                    ? { ...sheet, data: currentMind.getData() }
+                    : sheet
+            ));
+            sheetsRef.current = nextSheets;
+            setSheets(nextSheets);
+        }
+        return nextSheets;
+    }, []);
+
+    const markDirty = useCallback(() => {
+        setDirty(true);
+        handler.emit('change');
     }, []);
 
     const renderSheet = useCallback((data: MindElixirData, resolveImageUrl: (url: string) => string, adaptive: boolean) => {
@@ -57,25 +100,28 @@ export default function XmindViewer() {
         if (mindRef.current) {
             mindRef.current.changeTheme(buildMindElixirTheme(adaptive), false);
             mindRef.current.refresh(data);
+            mindRef.current.clearHistory?.();
             mindRef.current.scaleFit();
             return;
         }
         const mind = new MindElixir({
             el,
             direction: MindElixir.SIDE,
-            editable: false,
-            contextMenu: false,
-            toolBar: false,
-            keypress: false,
+            editable: true,
+            contextMenu: true,
+            toolBar: true,
+            keypress: true,
             imageProxy: resolveImageUrl,
             theme: buildMindElixirTheme(adaptive),
         });
         mind.init(data);
         mind.scaleFit();
         scaleHandlerRef.current = onScale;
+        operationHandlerRef.current = markDirty;
         attachScaleListener(mind, onScale);
+        mind.bus.addListener('operation', markDirty);
         mindRef.current = mind;
-    }, []);
+    }, [markDirty]);
 
     const zoomOut = useCallback(() => {
         const mind = mindRef.current;
@@ -99,6 +145,8 @@ export default function XmindViewer() {
 
     const loadXmind = useCallback(async (payload: { path?: string; buffer?: number[]; error?: string; fileName?: string }) => {
         setLoading(true);
+        setSaving(false);
+        setDirty(false);
         setError(null);
         setSheets([]);
         setSelectedId(null);
@@ -115,6 +163,7 @@ export default function XmindViewer() {
                 throw new Error('No sheets found in XMind file');
             }
             documentRef.current = parsed;
+            sheetsRef.current = parsed.sheets;
             setSheets(parsed.sheets);
             setSelectedId(parsed.sheets[0].id);
         } catch (e) {
@@ -124,9 +173,28 @@ export default function XmindViewer() {
         }
     }, [destroyMind]);
 
+    const handleSave = useCallback(async () => {
+        const doc = documentRef.current;
+        if (!doc || saving) {
+            return;
+        }
+        try {
+            setSaving(true);
+            const content = await doc.export(syncCurrentSheet());
+            handler.emit('save', [...content]);
+        } catch (e) {
+            setSaving(false);
+            message.error(e instanceof Error ? e.message : 'Failed to save XMind file');
+        }
+    }, [saving, syncCurrentSheet]);
+
     useEffect(() => {
         handler.on('open', (payload) => {
             loadXmind(payload);
+        }).on('saveDone', () => {
+            setSaving(false);
+            setDirty(false);
+            message.success({ duration: 1.5, content: '保存成功' });
         }).emit('init');
 
         return () => {
@@ -135,6 +203,17 @@ export default function XmindViewer() {
             destroyMind();
         };
     }, [loadXmind, destroyMind]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if ((event.metaKey || event.ctrlKey) && event.code === 'KeyS') {
+                event.preventDefault();
+                void handleSave();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
+    }, [handleSave]);
 
     const selected = sheets.find(sheet => sheet.id === selectedId) ?? null;
 
@@ -173,7 +252,10 @@ export default function XmindViewer() {
                                         key={sheet.id}
                                         className={`xmind-sheet-item${selectedId === sheet.id ? ' is-active' : ''}`}
                                         title={sheet.title}
-                                        onClick={() => setSelectedId(sheet.id)}
+                                        onClick={() => {
+                                            syncCurrentSheet();
+                                            setSelectedId(sheet.id);
+                                        }}
                                     >
                                         {sheet.title}
                                     </div>
@@ -198,6 +280,17 @@ export default function XmindViewer() {
                             <div ref={mapRef} className="xmind-map" />
                             <div className="xmind-map-footer">
                                 <SponsorBar placement="left" />
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    className="xmind-save-btn"
+                                    icon={<SaveOutlined />}
+                                    aria-label="Save"
+                                    title="保存"
+                                    loading={saving}
+                                    disabled={!dirty || saving}
+                                    onClick={() => void handleSave()}
+                                />
                                 <div className="xmind-zoom-controls">
                                     <Button
                                         type="text"
