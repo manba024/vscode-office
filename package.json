@@ -669,6 +669,11 @@
 						"default": false,
 						"description": "Using workspace path as markdown image base path."
 					},
+					"vscode-office.pasteImageToWorkspacePath": {
+						"type": "boolean",
+						"default": false,
+						"description": "Paste markdown images into the workspace path and insert image links with a leading slash."
+					},
 					"vscode-office.pasterImgPath": {
 						"type": "string",
 						"default": "image/${fileName}/${now}.${ext}",
