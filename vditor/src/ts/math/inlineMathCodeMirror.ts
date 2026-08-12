@@ -16,6 +16,7 @@ type InlineMathBinding = {
     languageCompartment: Compartment;
     updating: boolean;
     previewTimer: number;
+    vditor: IVditor;
 };
 
 const bindings = new WeakMap<HTMLElement, InlineMathBinding>();
@@ -55,42 +56,108 @@ const getInlineMathParts = (containerEl: HTMLElement) => {
 
 const getCodeText = (codeEl: HTMLElement) => (codeEl.textContent || "").replaceAll(Constants.ZWSP, "");
 
+const getModeEditor = (vditor: IVditor) => {
+    if (vditor.currentMode === "wysiwyg") {
+        return vditor.wysiwyg.element;
+    }
+    if (vditor.currentMode === "ir") {
+        return vditor.ir.element;
+    }
+    return null;
+};
+
 const focusInlineMathView = (view: EditorView) => {
     view.contentDOM.focus({ preventScroll: true });
 };
 
-const moveCaretOutsideInlineMath = (containerEl: HTMLElement, direction: "before" | "after") => {
+/** 文本节点是否为纯 ZWSP（lute 在 math-inline 后会插入） */
+const isZwspOnlyText = (node: Node | null | undefined): node is Text => {
+    return !!node && node.nodeType === 3 && (node.textContent ?? "") === Constants.ZWSP;
+};
+
+const moveCaretOutsideInlineMath = (
+    vditor: IVditor,
+    containerEl: HTMLElement,
+    direction: "before" | "after",
+) => {
+    const editor = getModeEditor(vditor);
+    if (editor) {
+        editor.focus({ preventScroll: true });
+    }
+
     const range = containerEl.ownerDocument.createRange();
     const parent = containerEl.parentNode;
     const siblings = parent ? Array.from(parent.childNodes) : [];
     const idx = siblings.length ? siblings.indexOf(containerEl) : -1;
 
-    const setIntoTextNode = (node: Node | undefined | null, atEnd: boolean) => {
-        if (!node || node.nodeType !== 3) return false;
-        const t = node as Text;
-        const len = t.textContent?.length ?? 0;
-        range.setStart(t, atEnd ? len : 0);
-        return true;
-    };
-
     if (direction === "before") {
-        // Prefer placing caret inside previous text node end so next ArrowRight works immediately.
-        if (idx > 0 && setIntoTextNode(siblings[idx - 1], true)) {
-            // ok
+        const prev = idx > 0 ? siblings[idx - 1] : null;
+        if (isZwspOnlyText(prev)) {
+            // 公式前 ZWSP：光标放在 ZWSP 之后（offset 1），与行内删除逻辑一致
+            range.setStart(prev, 1);
+        } else if (prev?.nodeType === 3) {
+            range.setStart(prev, prev.textContent?.length ?? 0);
+        } else if (parent) {
+            const zwsp = document.createTextNode(Constants.ZWSP);
+            parent.insertBefore(zwsp, containerEl);
+            range.setStart(zwsp, 1);
         } else {
             range.setStartBefore(containerEl);
         }
     } else {
-        // Prefer placing caret inside next text node start so next ArrowRight is not required.
-        if (idx > -1 && idx + 1 < siblings.length && setIntoTextNode(siblings[idx + 1], false)) {
-            // ok
+        // lute 在 math-inline 后写入 ZWSP；光标若落在 ZWSP 开头，输入会跳到行首
+        let next = idx > -1 ? siblings[idx + 1] : null;
+        if (!isZwspOnlyText(next) && parent) {
+            const zwsp = document.createTextNode(Constants.ZWSP);
+            if (containerEl.nextSibling) {
+                parent.insertBefore(zwsp, containerEl.nextSibling);
+            } else {
+                parent.appendChild(zwsp);
+            }
+            next = zwsp;
+        }
+        if (isZwspOnlyText(next)) {
+            // 放在 ZWSP 字符之后（offset=1），不要停在 offset=0
+            range.setStart(next, 1);
+        } else if (next?.nodeType === 3) {
+            const text = next.textContent ?? "";
+            if (text.startsWith(Constants.ZWSP)) {
+                range.setStart(next, 1);
+            } else {
+                range.setStart(next, 0);
+            }
         } else {
             range.setStartAfter(containerEl);
         }
     }
     range.collapse(true);
-    // outer editor will keep focus; selection is what matters
     setSelectionFocus(range);
+    vditor[vditor.currentMode].range = range;
+};
+
+/**
+ * 若光标在 math-inline 后的纯 ZWSP 开头，挪到该 ZWSP 字符之后。
+ * 落在 ZWSP 内 offset=0 时，浏览器输入会异常跳到行首。
+ */
+export const skipZwspAfterInlineMath = (range: Range, vditor?: IVditor) => {
+    const node = range.startContainer;
+    if (node.nodeType !== 3 || range.startOffset !== 0) {
+        return false;
+    }
+    if ((node.textContent ?? "") !== Constants.ZWSP) {
+        return false;
+    }
+    const prev = node.previousSibling;
+    if (!(prev instanceof HTMLElement) || prev.getAttribute("data-type") !== "math-inline") {
+        return false;
+    }
+    range.setStart(node, 1);
+    range.collapse(true);
+    setSelectionFocus(range);
+    if (vditor) {
+        vditor[vditor.currentMode].range = range;
+    }
+    return true;
 };
 
 const updatePreview = (vditor: IVditor, previewMathEl: HTMLElement, latexText: string) => {
@@ -136,6 +203,17 @@ const inlineMathDomEventHandlers = (
                 return;
             }
             exitInlineMathEdit(containerEl);
+            const editor = getModeEditor(binding.vditor);
+            const active = document.activeElement;
+            if (editor && active && (active === editor || editor.contains(active))) {
+                const sel = getSelection();
+                if (sel?.rangeCount && editor.contains(sel.getRangeAt(0).startContainer)) {
+                    // 点击落在公式后的纯 ZWSP 上时，挪到 ZWSP 之后
+                    skipZwspAfterInlineMath(sel.getRangeAt(0), binding.vditor);
+                    return;
+                }
+            }
+            moveCaretOutsideInlineMath(binding.vditor, containerEl, "after");
         }, 0);
         return false;
     },
@@ -198,6 +276,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
 
     const existing = bindings.get(containerEl);
     if (existing?.view.dom.isConnected) {
+        existing.vditor = vditor;
         focusInlineMathView(existing.view);
         const pos = focusAtStart ? 0 : existing.view.state.doc.length;
         existing.view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: false });
@@ -219,6 +298,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
         languageCompartment,
         updating: false,
         previewTimer: 0,
+        vditor,
     };
 
     const latexSupport = latex({ enableAutocomplete: true, enableLinting: false });
@@ -237,7 +317,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
                             return false;
                         }
                         exitInlineMathEdit(containerEl);
-                        moveCaretOutsideInlineMath(containerEl, "before");
+                        moveCaretOutsideInlineMath(vditor, containerEl, "before");
                         return true;
                     },
                 },
@@ -249,7 +329,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
                             return false;
                         }
                         exitInlineMathEdit(containerEl);
-                        moveCaretOutsideInlineMath(containerEl, "after");
+                        moveCaretOutsideInlineMath(vditor, containerEl, "after");
                         return true;
                     },
                 },
@@ -257,7 +337,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
                     key: "ArrowUp",
                     run: () => {
                         exitInlineMathEdit(containerEl);
-                        moveCaretOutsideInlineMath(containerEl, "before");
+                        moveCaretOutsideInlineMath(vditor, containerEl, "before");
                         return true;
                     },
                 },
@@ -265,7 +345,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
                     key: "ArrowDown",
                     run: () => {
                         exitInlineMathEdit(containerEl);
-                        moveCaretOutsideInlineMath(containerEl, "after");
+                        moveCaretOutsideInlineMath(vditor, containerEl, "after");
                         return true;
                     },
                 },
@@ -273,6 +353,7 @@ export const enterInlineMathEdit = (vditor: IVditor, fromEl: HTMLElement, focusA
                     key: "Escape",
                     run: () => {
                         exitInlineMathEdit(containerEl);
+                        moveCaretOutsideInlineMath(vditor, containerEl, "after");
                         return true;
                     },
                 },

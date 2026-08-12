@@ -37,7 +37,7 @@ import { moveDown, moveUp, handleLinkPopoverAltEnter } from "./highlightToolbarW
 import { nextIsCode } from "./inlineTag";
 import { removeHeading, setHeading } from "./setHeading";
 import { focusWysiwygCodeBlock, showCode } from "./showCode";
-import { enterInlineMathEdit } from "../math/inlineMathCodeMirror";
+import { enterInlineMathEdit, skipZwspAfterInlineMath } from "../math/inlineMathCodeMirror";
 import { handleHtmlEditorAltEnter } from "../htmlInline/htmlInlineEditor";
 
 export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
@@ -67,6 +67,12 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
             }
         }
         return false;
+    }
+
+    // 公式后 ZWSP：输入前先跳过，避免光标在 ZWSP 开头时字符跑到行首
+    if (event.key.length === 1 || event.key === "Enter" || event.key === "Backspace" || event.key === "Delete") {
+        const pendingRange = getEditorRange(vditor);
+        skipZwspAfterInlineMath(pendingRange, vditor);
     }
 
     // 添加第一次记录 undo 的光标
