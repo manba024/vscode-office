@@ -33,6 +33,29 @@ function isLocalRelativePath(linkUri: string): boolean {
     return true;
 }
 
+function isWorkspaceAbsolutePath(linkUri: string): boolean {
+    const { path } = splitPathQueryFragment(linkUri);
+    return path.startsWith('/') && !path.startsWith('//');
+}
+
+function resolveWorkspaceAbsoluteUri(linkUri: string, workspaceUri: vscode.Uri): vscode.Uri | undefined {
+    const { path, query, fragment } = splitPathQueryFragment(linkUri);
+    const segments = path.split(/[/\\]+/).filter(Boolean);
+    let resolved = workspaceUri.with({ query: '', fragment: '' });
+    for (const segment of segments) {
+        if (segment === '.') {
+            continue;
+        }
+        if (segment === '..') {
+            resolved = vscode.Uri.joinPath(resolved, '..');
+            continue;
+        }
+        resolved = vscode.Uri.joinPath(resolved, segment);
+    }
+
+    return resolved.with({ query, fragment });
+}
+
 function resolveRelativeUri(linkUri: string, baseUri: vscode.Uri): vscode.Uri | undefined {
     const { path, query, fragment } = splitPathQueryFragment(linkUri);
     if (!path) {
@@ -96,8 +119,13 @@ function parseWebviewCdnUri(linkUri: string): vscode.Uri | undefined {
  *
  * When `baseUri` is provided, local relative paths such as `./file.md` or `../images/a.png`
  * are resolved against the parent directory of `baseUri`.
+ * When `workspaceUri` is provided, paths beginning with `/` are resolved from that workspace root.
  */
-export function parseWebviewResourceUri(linkUri: string, baseUri?: vscode.Uri): vscode.Uri | undefined {
+export function parseWebviewResourceUri(
+    linkUri: string,
+    baseUri?: vscode.Uri,
+    workspaceUri?: vscode.Uri,
+): vscode.Uri | undefined {
     const fromWebview = parseWebviewCdnUri(linkUri);
     if (fromWebview) {
         return fromWebview;
@@ -109,6 +137,10 @@ export function parseWebviewResourceUri(linkUri: string, baseUri?: vscode.Uri): 
         } catch {
             return undefined;
         }
+    }
+
+    if (workspaceUri && isWorkspaceAbsolutePath(linkUri) && !SCHEME_PREFIX_REG.test(linkUri)) {
+        return resolveWorkspaceAbsoluteUri(linkUri, workspaceUri);
     }
 
     if (!baseUri || !isLocalRelativePath(linkUri) || SCHEME_PREFIX_REG.test(linkUri)) {
