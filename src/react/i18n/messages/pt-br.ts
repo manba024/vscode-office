@@ -44,6 +44,10 @@ export default {
         copySuccess: 'Copiado',
         lineWrap: 'Quebra de linha',
         exportFailed: 'Falha ao exportar PNG',
+        previewBackground: 'Fundo da pré-visualização',
+        previewBgTransparent: 'Transparente',
+        previewBgWhite: 'Branco',
+        previewBgBlack: 'Preto',
     },
     viewer: {
         failedOpenFile: 'Falha ao abrir o arquivo',

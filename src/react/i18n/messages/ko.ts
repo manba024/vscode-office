@@ -44,6 +44,10 @@ export default {
         copySuccess: '복사됨',
         lineWrap: '줄 바꿈',
         exportFailed: 'PNG보내기 실패',
+        previewBackground: '미리보기 배경',
+        previewBgTransparent: '투명',
+        previewBgWhite: '흰색',
+        previewBgBlack: '검정',
     },
     viewer: {
         failedOpenFile: '파일을 열지 못했습니다',

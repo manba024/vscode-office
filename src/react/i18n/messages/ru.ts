@@ -44,6 +44,10 @@ export default {
         copySuccess: 'Скопировано',
         lineWrap: 'Перенос строк',
         exportFailed: 'Не удалось экспортировать PNG',
+        previewBackground: 'Фон предпросмотра',
+        previewBgTransparent: 'Прозрачный',
+        previewBgWhite: 'Белый',
+        previewBgBlack: 'Чёрный',
     },
     viewer: {
         failedOpenFile: 'Не удалось открыть файл',

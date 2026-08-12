@@ -16,7 +16,14 @@ import {
     updateSvgBackground,
     updateSvgFill,
 } from './svgUtils';
-import { loadSvgLineWrap, saveSvgLineWrap } from './svgViewerSettings';
+import {
+    loadSvgLineWrap,
+    loadSvgPreviewBackground,
+    saveSvgLineWrap,
+    saveSvgPreviewBackground,
+    SVG_PREVIEW_BACKGROUNDS,
+    type SvgPreviewBackground,
+} from './svgViewerSettings';
 import './SvgViewer.less';
 
 const NARROW_WIDTH_BREAKPOINT = 640;
@@ -84,6 +91,7 @@ function SvgViewerInner() {
     const [exportingPng, setExportingPng] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [lineWrap, setLineWrap] = useState(loadSvgLineWrap);
+    const [previewBackground, setPreviewBackground] = useState(loadSvgPreviewBackground);
     const [isGitScheme, setIsGitScheme] = useState(false);
 
     const contentRef = useRef('');
@@ -104,9 +112,21 @@ function SvgViewerInner() {
             return next;
         });
     }, []);
+
+    const onPreviewBackgroundChange = useCallback((background: SvgPreviewBackground) => {
+        setPreviewBackground(background);
+        saveSvgPreviewBackground(background);
+    }, []);
+
     const copySuccessText = $t('svg.copySuccess');
     const saveText = $t('common.save');
     const lineWrapText = $t('svg.lineWrap');
+    const previewBackgroundText = $t('svg.previewBackground');
+    const previewBgLabels: Record<SvgPreviewBackground, string> = {
+        transparent: $t('svg.previewBgTransparent'),
+        white: $t('svg.previewBgWhite'),
+        black: $t('svg.previewBgBlack'),
+    };
 
     const colors = useMemo(() => parseSvgColors(content), [content]);
     const [width] = useWindowSize();
@@ -337,6 +357,22 @@ function SvgViewerInner() {
                     <div className="svg-viewer__panel svg-viewer__panel--preview">
                         <div className="svg-viewer__header">
                             <span className="svg-viewer__title">Preview</span>
+                            <div className="svg-viewer__bg-swatches" role="group" aria-label={previewBackgroundText}>
+                                {SVG_PREVIEW_BACKGROUNDS.map((bg) => {
+                                    const label = previewBgLabels[bg];
+                                    return (
+                                        <button
+                                            key={bg}
+                                            type="button"
+                                            className={`svg-viewer__bg-swatch svg-viewer__bg-swatch--${bg}${previewBackground === bg ? ' svg-viewer__bg-swatch--active' : ''}`}
+                                            onClick={() => onPreviewBackgroundChange(bg)}
+                                            title={`${previewBackgroundText}: ${label}`}
+                                            aria-label={`${previewBackgroundText}: ${label}`}
+                                            aria-pressed={previewBackground === bg}
+                                        />
+                                    );
+                                })}
+                            </div>
                         </div>
                         {!previewOnly && <div className="svg-viewer__controls">
                             <div className="svg-viewer__control-row">
@@ -376,7 +412,7 @@ function SvgViewerInner() {
                         </div>}
                         <div
                             ref={canvasWrapRef}
-                            className={`svg-viewer__canvas-wrap${dragging ? ' svg-viewer__canvas-wrap--dragging' : ''}`}
+                            className={`svg-viewer__canvas-wrap svg-viewer__canvas-wrap--bg-${previewBackground}${dragging ? ' svg-viewer__canvas-wrap--dragging' : ''}`}
                             onMouseDown={onPreviewMouseDown}
                         >
                             {previewUrl ? (
