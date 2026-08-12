@@ -167,13 +167,11 @@
 
     .callout-builtin-icon-glyphs(vditor-callout__icon);
 
-    // IR mode stores title/icon on data attributes instead of vditor-callout__* nodes.
+    // IR mode: title/icon via data attrs; children auto-flow (not one shared grid-area).
     &:not(:has(.vditor-callout__info)) {
       display: grid;
       grid-template-columns: 16px 1fr;
-      grid-template-areas:
-        "icon title"
-        "content content";
+      grid-template-areas: "icon title";
       column-gap: 8px;
       padding: 12px 14px;
 
@@ -202,14 +200,16 @@
       }
 
       > * {
-        grid-area: content;
+        grid-column: 1 / -1;
         color: var(--front-color, inherit);
-        padding-top: 6px;
-        margin-top: 0;
-        margin-bottom: 0;
+
+        &:first-child {
+          margin-top: 0;
+          padding-top: 6px;
+        }
 
         &:last-child {
-          padding-bottom: 0;
+          margin-bottom: 0;
         }
       }
 
