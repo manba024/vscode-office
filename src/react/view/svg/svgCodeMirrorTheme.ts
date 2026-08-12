@@ -52,15 +52,21 @@ export const svgEditorTheme = EditorView.theme({
 }, { dark: true });
 
 const svgHighlightStyle = HighlightStyle.define([
-  // entity.name.tag
+    // HTML
     { tag: t.tagName, color: 'var(--vscode-debugConsole-errorForeground, #f97583)' },
-  // entity.other.attribute-name
     { tag: t.attributeName, color: 'var(--vscode-gitDecoration-modifiedResourceForeground, #ffab70)' },
-  // string.quoted
     { tag: [t.attributeValue, t.string], color: 'var(--vscode-gitDecoration-addedResourceForeground, #85e89d)' },
-    { tag: t.comment, color: 'var(--vscode-debugTokenExpression-number, #6a9955)', fontStyle: 'italic' },
+    { tag: [t.comment, t.blockComment], color: 'var(--vscode-debugTokenExpression-number, #6a9955)', fontStyle: 'italic' },
     { tag: t.processingInstruction, color: 'var(--vscode-descriptionForeground, #808080)' },
-    { tag: [t.bracket, t.punctuation, t.operator], color: 'var(--vscode-editor-foreground, #cccccc)' },
+    // CSS inside <style> / style=""
+    { tag: t.propertyName, color: 'var(--vscode-debugTokenExpression-name, #9cdcfe)' },
+    { tag: [t.className, t.labelName], color: 'var(--vscode-symbolIcon-classForeground, #d7ba7d)' },
+    { tag: [t.keyword, t.definitionKeyword, t.modifier, t.operatorKeyword], color: 'var(--vscode-symbolIcon-keywordForeground, #569cd6)' },
+    { tag: [t.number, t.unit, t.color], color: 'var(--vscode-debugTokenExpression-number, #b5cea8)' },
+    { tag: [t.atom, t.bool, t.null], color: 'var(--vscode-debugTokenExpression-boolean, #569cd6)' },
+    { tag: t.variableName, color: 'var(--vscode-debugTokenExpression-name, #9cdcfe)' },
+    { tag: t.namespace, color: 'var(--vscode-symbolIcon-namespaceForeground, #4ec9b0)' },
+    { tag: [t.bracket, t.paren, t.squareBracket, t.brace, t.punctuation, t.separator, t.operator, t.compareOperator, t.logicOperator, t.arithmeticOperator, t.derefOperator, t.definitionOperator], color: 'var(--vscode-editor-foreground, #cccccc)' },
 ]);
 
 export const svgSyntaxHighlighting = syntaxHighlighting(svgHighlightStyle);
