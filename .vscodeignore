@@ -6,6 +6,7 @@ vditor/**
 .idea/
 test/**
 packages/**
+patches/**
 template/**
 .gitignore
 vsc-extension-quickstart.md

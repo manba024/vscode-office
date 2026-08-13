@@ -1,0 +1,146 @@
+diff --git a/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/comment/comment-xform.js b/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/comment/comment-xform.js
+index 2ce930a..80669c3 100644
+--- a/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/comment/comment-xform.js
++++ b/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/comment/comment-xform.js
+@@ -1,5 +1,6 @@
+ import { __module as commentXform } from '../../../_virtual/comment-xform.js';
+ import { __require as requireRichTextXform } from '../strings/rich-text-xform.js';
++import { __require as requireTextXform } from '../strings/text-xform.js';
+ import { __require as requireUtils } from '../../../utils/utils.js';
+ import { __require as requireBaseXform } from '../base-xform.js';
+ 
+@@ -9,6 +10,7 @@ function requireCommentXform () {
+ 	if (hasRequiredCommentXform) return commentXform.exports;
+ 	hasRequiredCommentXform = 1;
+ 	const RichTextXform = /*@__PURE__*/ requireRichTextXform();
++	const TextXform = /*@__PURE__*/ requireTextXform();
+ 	const utils = /*@__PURE__*/ requireUtils();
+ 	const BaseXform = /*@__PURE__*/ requireBaseXform();
+ 
+@@ -52,6 +54,13 @@ function requireCommentXform () {
+ 	    return this._richTextXform;
+ 	  },
+ 
++	  get textXform() {
++	    if (!this._textXform) {
++	      this._textXform = new TextXform();
++	    }
++	    return this._textXform;
++	  },
++
+ 	  render(xmlStream, model) {
+ 	    model = model || this.model;
+ 
+@@ -88,6 +97,10 @@ function requireCommentXform () {
+ 	        this.parser = this.richTextXform;
+ 	        this.parser.parseOpen(node);
+ 	        return true;
++	      case 't':
++	        this.parser = this.textXform;
++	        this.parser.parseOpen(node);
++	        return true;
+ 	      default:
+ 	        return false;
+ 	    }
+@@ -105,6 +118,14 @@ function requireCommentXform () {
+ 	        this.model.note.texts.push(this.parser.model);
+ 	        this.parser = undefined;
+ 	        return true;
++	      case 't':
++	        if (this.parser === this.textXform) {
++	          this.model.note.texts.push({text: this.parser.model});
++	          this.parser = undefined;
++	        } else if (this.parser) {
++	          this.parser.parseClose(name);
++	        }
++	        return true;
+ 	      default:
+ 	        if (this.parser) {
+ 	          this.parser.parseClose(name);
+diff --git a/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/sheet/worksheet-xform.js b/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/sheet/worksheet-xform.js
+index 96ea974..b896c37 100644
+--- a/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/sheet/worksheet-xform.js
++++ b/node_modules/@cweijan/exceljs/dist/browser/xlsx/xform/sheet/worksheet-xform.js
+@@ -494,13 +494,19 @@ function requireWorksheetXform () {
+ 	    const rels = (model.relationships || []).reduce((h, rel) => {
+ 	      h[rel.Id] = rel;
+ 	      if (rel.Type === RelType.Comments) {
+-	        model.comments = options.comments[rel.Target].comments;
++	        const comments = options.comments[rel.Target];
++	        if (comments) {
++	          model.comments = comments.comments;
++	        }
+ 	      }
+ 	      if (rel.Type === RelType.VmlDrawing && model.comments && model.comments.length) {
+-	        const vmlComment = options.vmlDrawings[rel.Target].comments;
+-	        model.comments.forEach((comment, index) => {
+-	          comment.note = Object.assign({}, comment.note, vmlComment[index]);
+-	        });
++	        const vmlDrawing = options.vmlDrawings[rel.Target];
++	        if (vmlDrawing) {
++	          const vmlComment = vmlDrawing.comments;
++	          model.comments.forEach((comment, index) => {
++	            comment.note = Object.assign({}, comment.note, vmlComment[index]);
++	          });
++	        }
+ 	      }
+ 	      return h;
+ 	    }, {});
+diff --git a/node_modules/@cweijan/exceljs/dist/browser/xlsx/xlsx.js b/node_modules/@cweijan/exceljs/dist/browser/xlsx/xlsx.js
+index 1489aae..9c3c627 100644
+--- a/node_modules/@cweijan/exceljs/dist/browser/xlsx/xlsx.js
++++ b/node_modules/@cweijan/exceljs/dist/browser/xlsx/xlsx.js
+@@ -189,10 +189,13 @@ function requireXlsx () {
+ 	    model.worksheets.push(worksheet);
+ 	  }
+ 
+-	  async _processCommentEntry(stream, model, name) {
++	  async _processCommentEntry(stream, model, name, path) {
+ 	    const xform = new CommentsXform();
+ 	    const comments = await xform.parseStream(stream);
+ 	    model.comments[`../${name}.xml`] = comments;
++	    model.comments[path] = comments;
++	    model.comments[`/${path}`] = comments;
++	    model.comments[path.replace(/^xl\//, '../')] = comments;
+ 	  }
+ 
+ 	  async _processTableEntry(stream, model, name) {
+@@ -254,10 +257,13 @@ function requireXlsx () {
+ 	    model.drawingRels[name] = relationships;
+ 	  }
+ 
+-	  async _processVmlDrawingEntry(entry, model, name) {
++	  async _processVmlDrawingEntry(entry, model, name, path) {
+ 	    const xform = new VmlNotesXform();
+ 	    const vmlDrawing = await xform.parseStream(entry);
+ 	    model.vmlDrawings[`../drawings/${name}.vml`] = vmlDrawing;
++	    model.vmlDrawings[path] = vmlDrawing;
++	    model.vmlDrawings[`/${path}`] = vmlDrawing;
++	    model.vmlDrawings[path.replace(/^xl\//, '../')] = vmlDrawing;
+ 	  }
+ 
+ 	  async _processThemeEntry(entry, model, name) {
+@@ -426,9 +432,9 @@ function requireXlsx () {
+ 	              await this._processDrawingEntry(stream, model, match[1]);
+ 	              break;
+ 	            }
+-	            match = entryName.match(/xl\/(comments\d+)[.]xml/);
++	            match = entryName.match(/xl\/(?:comments\/)?(comments?\d+)[.]xml$/);
+ 	            if (match) {
+-	              await this._processCommentEntry(stream, model, match[1]);
++	              await this._processCommentEntry(stream, model, match[1], entryName);
+ 	              break;
+ 	            }
+ 	            match = entryName.match(/xl\/tables\/(table\d+)[.]xml/);
+@@ -441,9 +447,9 @@ function requireXlsx () {
+ 	              await this._processDrawingRelsEntry(stream, model, match[1]);
+ 	              break;
+ 	            }
+-	            match = entryName.match(/xl\/drawings\/(vmlDrawing\d+)[.]vml/);
++	            match = entryName.match(/xl\/drawings\/((?:vmlDrawing|commentsDrawing)\d+)[.]vml$/);
+ 	            if (match) {
+-	              await this._processVmlDrawingEntry(stream, model, match[1]);
++	              await this._processVmlDrawingEntry(stream, model, match[1], entryName);
+ 	              break;
+ 	            }
+ 	          }
