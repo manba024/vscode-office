@@ -1,8 +1,9 @@
-import { getToolbar, bindShortcut, createContextMenu, setAIAvailable } from "./util.js";
+import { getToolbar, bindShortcut, createContextMenu, setAIAvailable, } from "./util.js";
+import { observeWorkspaceAbsoluteImages, createMarkdownValueReader, restoreWorkspaceBaseUrls, } from "./imagePath.js";
 import { mapVscodeLanguageToVditorLang } from "./lang.js";
 
 handler.on("open", async (md) => {
-  const { content, rootPath, documentCacheId, pendingFragment, config } = md;
+  const { content, rootPath, workspaceBaseUrl, documentCacheId, pendingFragment, config } = md;
   const {
     language, isWeb, isDev, markdown,
     editMode, editorTheme, codeMirrorTheme, mermaidTheme
@@ -10,7 +11,9 @@ handler.on("open", async (md) => {
   if (isWeb) {
     document.body.classList.add('is-web')
   }
-  const editor = new Vditor('vditor', {
+  let editor;
+  const getMarkdownValue = createMarkdownValueReader(() => editor, workspaceBaseUrl);
+  editor = new Vditor('vditor', {
     value: content,
     cdn: rootPath,
     height: '100%',
@@ -29,7 +32,7 @@ handler.on("open", async (md) => {
     lang: mapVscodeLanguageToVditorLang(language),
     tab: '\t',
     toolbar: await getToolbar(rootPath, () => {
-      handler.emit('doSave', editor?.getValue());
+      handler.emit('doSave', getMarkdownValue());
       editor?.markSaved();
     }),
     onAboutOpen: () => handler.emit('openAbout'),
@@ -82,7 +85,7 @@ handler.on("open", async (md) => {
       handler.emit('editViewerSettings', editor.exportViewerSettings())
     },
     input(content) {
-      handler.emit("save", content)
+      handler.emit("save", restoreWorkspaceBaseUrls(content, workspaceBaseUrl))
     },
     upload: {
       url: '/image',
@@ -115,6 +118,7 @@ handler.on("open", async (md) => {
     },
     after() {
       const { viewerSettings } = md;
+      observeWorkspaceAbsoluteImages(document.getElementById('vditor'), workspaceBaseUrl);
       if (viewerSettings?.enabled) {
         editor.setViewerSettingsSyncEnabled(true);
         if (viewerSettings.settings) {
@@ -145,7 +149,7 @@ handler.on("open", async (md) => {
         if (document.querySelector("[data-type='yaml-front-matter'].vditor-code-block--cm .cm-editor.cm-focused")) {
           return;
         }
-        if (editor.getValue() === content) {
+        if (getMarkdownValue() === content) {
           return;
         }
         editor.setValue(content);
@@ -181,6 +185,6 @@ handler.on("open", async (md) => {
       }
     }
   })
-  bindShortcut(handler, editor);
+  bindShortcut(handler, editor, workspaceBaseUrl);
   createContextMenu(editor)
 }).emit("init")

@@ -44,6 +44,10 @@ export default {
         copySuccess: 'コピーしました',
         lineWrap: '折り返し',
         exportFailed: 'PNG のエクスポートに失敗しました',
+        previewBackground: 'プレビュー背景',
+        previewBgTransparent: '透明',
+        previewBgWhite: '白',
+        previewBgBlack: '黒',
     },
     viewer: {
         failedOpenFile: 'ファイルを開けませんでした',

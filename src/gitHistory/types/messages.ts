@@ -1,4 +1,4 @@
-import type { GitCommitData, GitCommitDetailsData, GitRepoInfo, LoadRepositoryRequest } from './git';
+import type { GitCommitData, GitCommitDetailsData, GitCommitStash, GitRepoInfo, LoadRepositoryRequest } from './git';
 
 export interface GitHistoryReadyPayload {
     readonly repos: ReadonlyArray<string>;
@@ -35,6 +35,7 @@ export interface CommitDetailsPayload {
     readonly repo: string;
     readonly commitHash: string;
     readonly hasParents: boolean;
+    readonly stash?: GitCommitStash | null;
 }
 
 export type { GitActionPayload, GitActionResult } from './gitActions';

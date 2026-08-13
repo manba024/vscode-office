@@ -8,6 +8,10 @@ export function isSelectableCommit(commit: GitCommit | undefined): boolean {
     return commit.hash !== UNCOMMITTED && !commit.stash;
 }
 
+export function isInspectableCommit(commit: GitCommit | undefined): boolean {
+    return Boolean(commit);
+}
+
 export function abbrevCommitHash(hash: string): string {
     return hash === UNCOMMITTED ? '*' : hash.substring(0, 7);
 }

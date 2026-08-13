@@ -217,6 +217,20 @@ body:has(.xmind-viewer.xmind-dark) {
     background: var(--viewer-hover);
 }
 
+.xmind-save-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    padding: 0;
+    color: var(--viewer-fg);
+}
+
+.xmind-save-btn:hover {
+    color: var(--viewer-accent);
+    background: var(--viewer-hover);
+}
+
 .xmind-zoom-label {
     min-width: 44px;
     font-size: 12px;

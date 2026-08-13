@@ -44,6 +44,10 @@ export default {
         copySuccess: '已複製',
         lineWrap: '自動換行',
         exportFailed: '匯出 PNG 失敗',
+        previewBackground: '預覽背景',
+        previewBgTransparent: '透明',
+        previewBgWhite: '白色',
+        previewBgBlack: '黑色',
     },
     viewer: {
         failedOpenFile: '開啟檔案失敗',

@@ -368,9 +368,17 @@ export class CommitService {
         });
     }
 
-    getCommitDetails(repo: string, commitHash: string, hasParents: boolean): Promise<GitCommitDetailsData> {
+    getCommitDetails(
+        repo: string,
+        commitHash: string,
+        hasParents: boolean,
+        stash?: GitCommit['stash'] | null
+    ): Promise<GitCommitDetailsData> {
         if (commitHash === UNCOMMITTED) {
             return this.getUncommittedCommitDetails(repo);
+        }
+        if (stash) {
+            return this.getStashCommitDetails(repo, commitHash, stash);
         }
         const fromCommit = hasParents ? `${commitHash}^` : EMPTY_TREE_HASH;
         return Promise.all([
@@ -608,7 +616,7 @@ export class CommitService {
                         hash: line[0],
                         selector: line[1],
                         baseHash: parents[0] ?? '',
-                        untrackedFilesHash: parents[1] ?? null,
+                        untrackedFilesHash: parents[2] ?? null,
                         author: line[3],
                         email: line[4],
                         date: parseInt(line[5]),
@@ -637,6 +645,43 @@ export class CommitService {
                 body: '',
                 fileChanges: generateFileChanges(nameStatus, numStat),
             };
+            return { commitDetails: details, error: null };
+        }).catch((errorMessage: string) => ({
+            commitDetails: null,
+            error: errorMessage,
+        }));
+    }
+
+    private getStashCommitDetails(
+        repo: string,
+        commitHash: string,
+        stash: GitCommit['stash'],
+    ): Promise<GitCommitDetailsData> {
+        const baseHash = stash.baseHash || `${commitHash}^1`;
+        const trackedChanges = Promise.all([
+            this.getDiffNameStatus(repo, baseHash, commitHash),
+            this.getDiffNumStat(repo, baseHash, commitHash),
+        ]).then(([nameStatus, numStat]) =>
+            generateFileChanges(nameStatus, numStat, { oldRef: baseHash, newRef: commitHash })
+        );
+        const untrackedChanges = stash.untrackedFilesHash
+            ? Promise.all([
+                this.getDiffNameStatus(repo, EMPTY_TREE_HASH, stash.untrackedFilesHash),
+                this.getDiffNumStat(repo, EMPTY_TREE_HASH, stash.untrackedFilesHash),
+            ]).then(([nameStatus, numStat]) =>
+                generateFileChanges(nameStatus, numStat, {
+                    oldRef: EMPTY_TREE_HASH,
+                    newRef: stash.untrackedFilesHash!,
+                })
+            )
+            : Promise.resolve([] as GitFileChange[]);
+
+        return Promise.all([
+            this.getCommitDetailsBase(repo, commitHash),
+            trackedChanges,
+            untrackedChanges,
+        ]).then(([details, tracked, untracked]) => {
+            details.fileChanges = mergeFileChanges(tracked, untracked);
             return { commitDetails: details, error: null };
         }).catch((errorMessage: string) => ({
             commitDetails: null,
@@ -792,7 +837,8 @@ function parseStatusPorcelain(stdout: string): NameStatusRecord[] {
 
 function generateFileChanges(
     nameStatus: NameStatusRecord[],
-    numStat: NumStatRecord[]
+    numStat: NumStatRecord[],
+    refs?: { oldRef: string; newRef: string }
 ): GitFileChange[] {
     const fileChanges: GitFileChange[] = [];
     const fileLookup: Record<string, number> = {};
@@ -813,6 +859,7 @@ function generateFileChanges(
             type: record.type,
             additions: null,
             deletions: null,
+            ...refs,
         });
     }
 
@@ -828,6 +875,23 @@ function generateFileChanges(
     }
 
     return fileChanges;
+}
+
+function mergeFileChanges(
+    primary: ReadonlyArray<GitFileChange>,
+    secondary: ReadonlyArray<GitFileChange>,
+): GitFileChange[] {
+    if (secondary.length === 0) {
+        return [...primary];
+    }
+    const merged = [...primary];
+    const seen = new Set(primary.flatMap((change) => [change.oldFilePath, change.newFilePath]));
+    for (const change of secondary) {
+        if (!seen.has(change.oldFilePath) && !seen.has(change.newFilePath)) {
+            merged.push(change);
+        }
+    }
+    return merged;
 }
 
 function buildRenamePathAliases(oldFilePath: string, newFilePath: string): string[] {

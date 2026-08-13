@@ -45,6 +45,7 @@ import {
     computeRangeSelection,
     formatCommitHashes,
     formatCommitMessages,
+    isInspectableCommit,
     isSelectableCommit,
     sortCommitsByListOrder,
     sortCommitsForCherryPick,
@@ -566,6 +567,7 @@ function GitHistoryView({
             repo: targetRepo,
             commitHash: commit.hash,
             hasParents: commit.parents.length > 0,
+            stash: commit.stash,
         });
     }, []);
 
@@ -902,14 +904,15 @@ function GitHistoryView({
 
     const handleSelectCommit = (index: number, event?: MouseEvent) => {
         const commit = commits[index];
-        if (!isSelectableCommit(commit)) {
+        if (!isInspectableCommit(commit)) {
             return;
         }
 
         const multiModifier = Boolean(event && (event.metaKey || event.ctrlKey));
         const rangeModifier = Boolean(event && event.shiftKey);
+        const selectable = isSelectableCommit(commit);
 
-        if (rangeModifier && selectionAnchorRef.current !== null) {
+        if (selectable && rangeModifier && selectionAnchorRef.current !== null) {
             const range = computeRangeSelection(selectionAnchorRef.current, index, commits);
             setSelectedIndices(range);
             setFocusIndex(index);
@@ -920,7 +923,7 @@ function GitHistoryView({
             return;
         }
 
-        if (multiModifier) {
+        if (selectable && multiModifier) {
             setSelectedIndices((previous) => {
                 const next = new Set(previous);
                 if (next.has(index)) {
@@ -1175,7 +1178,7 @@ function GitHistoryView({
             return false;
         }
         const nextCommit = commits[nextIndex];
-        if (!isSelectableCommit(nextCommit)) {
+        if (!isInspectableCommit(nextCommit)) {
             return false;
         }
 

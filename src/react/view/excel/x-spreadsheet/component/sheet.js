@@ -221,7 +221,6 @@ function scrollbarMove() {
 }
 
 function selectorSet(multiple, ri, ci, indexesUpdated = true, moving = false) {
-  if (ri === -1 && ci === -1) return;
   const {
     table, selector, toolbar, data,
     contextMenu,
@@ -239,6 +238,93 @@ function selectorSet(multiple, ri, ci, indexesUpdated = true, moving = false) {
   this.formulaBar.update();
   toolbar.reset();
   table.render();
+}
+
+function cellHasSelectionContent(cell) {
+  if (!cell) return false;
+  return ['text', 'value', 'formula'].some((key) => {
+    const value = cell[key];
+    return value !== undefined && value !== null && `${value}` !== '';
+  });
+}
+
+function rowHasSelectionContent(data, ri, sci, eci) {
+  for (let ci = sci; ci <= eci; ci += 1) {
+    if (cellHasSelectionContent(data.rows.getCell(ri, ci))) return true;
+  }
+  return false;
+}
+
+function colHasSelectionContent(data, ci, sri, eri) {
+  for (let ri = sri; ri <= eri; ri += 1) {
+    if (cellHasSelectionContent(data.rows.getCell(ri, ci))) return true;
+  }
+  return false;
+}
+
+function findParentSelectionRange(data) {
+  const { range } = data.selector;
+  let {
+    sri, sci, eri, eci,
+  } = range;
+  const maxRi = data.rows.len - 1;
+  const maxCi = data.cols.len - 1;
+  sri = Math.max(0, sri);
+  sci = Math.max(0, sci);
+  eri = Math.min(maxRi, eri);
+  eci = Math.min(maxCi, eci);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    if (sri > 0 && rowHasSelectionContent(data, sri - 1, sci, eci)) {
+      sri -= 1;
+      changed = true;
+    }
+    if (eri < maxRi && rowHasSelectionContent(data, eri + 1, sci, eci)) {
+      eri += 1;
+      changed = true;
+    }
+    if (sci > 0 && colHasSelectionContent(data, sci - 1, sri, eri)) {
+      sci -= 1;
+      changed = true;
+    }
+    if (eci < maxCi && colHasSelectionContent(data, eci + 1, sri, eri)) {
+      eci += 1;
+      changed = true;
+    }
+  }
+
+  const parentRange = new CellRange(sri, sci, eri, eci);
+  return parentRange.contains(range) && !parentRange.equals(range) ? parentRange : null;
+}
+
+function selectorSetRange(cellRange) {
+  const {
+    table, selector, toolbar, data,
+    contextMenu,
+  } = this;
+  const cell = data.getCell(cellRange.sri, cellRange.sci);
+  selector.set(cellRange.sri, cellRange.sci);
+  if (cellRange.multiple()) {
+    selector.setEnd(cellRange.eri, cellRange.eci, false);
+    this.trigger('cells-selected', cell, selector.range);
+  } else {
+    this.trigger('cell-selected', cell, cellRange.sri, cellRange.sci);
+  }
+  contextMenu.setMode('range');
+  this.formulaBar.update();
+  toolbar.reset();
+  table.render();
+}
+
+function selectAllCells(preferParentRange = false) {
+  const parentRange = preferParentRange ? findParentSelectionRange(this.data) : null;
+  if (parentRange) {
+    selectorSetRange.call(this, parentRange);
+  } else {
+    selectorSet.call(this, false, -1, -1);
+  }
 }
 
 function isFormulaReferenceSelecting(sheet) {
@@ -727,6 +813,10 @@ function overlayerMousedown(evt) {
   } = cellRect;
   let { ri, ci } = cellRect;
   if (evt.target.className === `${cssPrefix}-resizer-hover`) return;
+  if (ri === -1 && ci === -1) {
+    selectAllCells.call(this);
+    return;
+  }
   if (offsetX <= data.cols.indexWidth && ci === -1 && ri >= 0) {
     if (beginHeaderRowDrag(this, evt, ri)) return;
   }
@@ -1289,6 +1379,12 @@ function sheetInitEvents() {
     // console.log('keydown.evt: ', keyCode);
     if (ctrlKey || metaKey) {
       switch (keyCode) {
+        case 65:
+          if (this.editor.cell === null) {
+            selectAllCells.call(this, true);
+            evt.preventDefault();
+          }
+          break;
         case 90:
           // undo: ctrl + z
           this.undo();
@@ -1442,6 +1538,10 @@ export default class Sheet {
     this.sheetImages = new SheetImages();
     this.sheetImages.setOnChange(() => {
       this.trigger('change');
+    });
+    this.sheetImages.setOnSelect(() => {
+      this.editor.clear();
+      this.selector.hide();
     });
     this.overlayerCEl = h('div', `${cssPrefix}-overlayer-content`)
       .children(

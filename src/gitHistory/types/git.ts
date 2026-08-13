@@ -39,6 +39,8 @@ export interface GitFileChange {
     readonly type: GitFileStatus;
     readonly additions: number | null;
     readonly deletions: number | null;
+    readonly oldRef?: string;
+    readonly newRef?: string;
 }
 
 export interface GitCommitDetails {

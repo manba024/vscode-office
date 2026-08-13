@@ -1,5 +1,60 @@
 # Change log
 
+# 4.1.9 2026-8-13
+
+Markdown Editor:
+
+- Support rendering workspace images.
+- Support pasting images to workspace paths.
+- Support Markmap diagrams with interactive features.
+- Support WikiLink graph.
+- Fix overlapping alert text in IR mode.
+- Fix input issues after leaving the math formula editor.
+
+Excel:
+
+- Support opening empty XLSX files.
+
+XMind:
+
+- Support editing XMind files.
+
+SVG:
+
+- Support customizing the preview overlay.
+- Use HTML syntax to support inline CSS highlighting.
+
+Git History:
+
+- Show details for stash and uncommitted changes.
+
+Editor:
+
+- Change dirty indicator to asterisk.
+
+# 4.1.8 2026-7-28
+
+Excel:
+
+- Add insert image support.
+- Add image crop tools.
+- Add pivot table read/write support.
+- Add select-all-cells support.
+- Add advanced replace options.
+- Improve XLSX loading performance.
+- Improve image selection and dragging behavior.
+- Fix inaccurate image drag anchor positioning.
+- Hide the theme toggle while loading.
+
+Markdown Editor:
+
+- Fix link and image edit popover layout issues.
+- Align frontmatter property key icons.
+
+PDF:
+
+- Improve sidebar styling.
+
 # 4.1.7 2026-7-24
 
 Markdown Editor:

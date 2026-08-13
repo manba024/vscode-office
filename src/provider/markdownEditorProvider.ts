@@ -117,6 +117,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         return data;
     }
 
+    private getWorkspaceUriByFileUtil(uri: vscode.Uri): vscode.Uri | undefined {
+        const workspacePath = getWorkspacePath(uri);
+        if (!workspacePath) {
+            return undefined;
+        }
+        return vscode.Uri.file(workspacePath);
+    }
+
     resolveCustomTextEditor(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel, token: vscode.CancellationToken): void | Thenable<void> {
         // console.log('schema', document.uri.scheme, document.uri.path, document.uri.query);
         const uri = document.uri;
@@ -197,8 +205,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         });
         handler.on("init", async () => {
             const viewerSettings = await ViewerSettingsService.loadForWebview();
+            const workspaceUri = this.getWorkspaceUriByFileUtil(uri);
             handler.emit("open", {
                 content, rootPath,
+                workspaceBaseUrl: workspaceUri ? webview.asWebviewUri(workspaceUri).toString().replace(/\?.+$/, '') : '',
                 documentCacheId: `${uri.scheme}:${uri.toString()}`,
                 pendingFragment: consumePendingBlockScroll(uri),
                 config: this.getMarkdownWebviewConfig(config),
@@ -220,7 +230,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 await openWikiLink(uri, linkUri);
                 return;
             }
-            const localUri = parseWebviewResourceUri(linkUri, uri);
+            const localUri = parseWebviewResourceUri(linkUri, uri, this.getWorkspaceUriByFileUtil(uri));
             if (localUri) {
                 vscode.commands.executeCommand('vscode.open', localUri, { preview: false });
             } else {

@@ -1,4 +1,4 @@
-import { parse } from 'path';
+import { isAbsolute, parse } from 'path';
 import * as vscode from 'vscode';
 import { ensureParentDirectory } from './workspaceFs';
 import { Global } from './global';
@@ -13,15 +13,29 @@ export function adjustImgPath(uri: vscode.Uri, ext: string = 'png') {
     const now = new Date();
     const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const uuid = crypto.randomUUID().replace(/-/g, '');
+    const workspacePath = getWorkspacePath(uri);
     const imgPath = Global.getConfig<string>("pasterImgPath")
         .replace("${fileName}", parse(uri.fsPath).name.replace(/\s/g, ''))
         .replace("${now}", now.getTime() + "")
         .replace("${date}", date)
         .replace("${uuid}", uuid)
-        .replace("${ext}", ext)
+        .replace("${ext}", ext);
+    const fullPath = imgPath.replace("${workspaceDir}", workspacePath);
+    let relPath = imgPath.replace(/\$\{workspaceDir\}\/?/, '');
+    if (
+        Global.getConfig<boolean>("pasteImageToWorkspacePath", false)
+        && workspacePath
+        && !isAbsolute(imgPath)
+    ) {
+        relPath = relPath.replace(/^[/\\]+/, '');
+        return {
+            relPath: `/${relPath}`,
+            fullPath: `${workspacePath}/${relPath}`.replace(/\\/g, "/"),
+        };
+    }
     return {
-        relPath: imgPath.replace(/\$\{workspaceDir\}\/?/, ''),
-        fullPath: imgPath.replace("${workspaceDir}", getWorkspacePath(uri))
+        relPath,
+        fullPath,
     };
 }
 

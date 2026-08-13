@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore, indentWithTab } from '@codemirror/commands';
-import { xml } from '@codemirror/lang-xml';
+import { html } from '@codemirror/lang-html';
 import { Compartment, EditorState } from '@codemirror/state';
 import {
     EditorView,
@@ -58,7 +58,7 @@ export default function SvgCodeEditor({ value, onChange, lineWrap = false }: Svg
                     keydown: handleTabKey,
                 }),
                 keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
-                xml(),
+                html(),
                 svgEditorTheme,
                 svgSyntaxHighlighting,
                 lineWrapCompartmentRef.current.of(initialLineWrapRef.current ? EditorView.lineWrapping : []),

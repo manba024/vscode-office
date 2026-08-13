@@ -1,3 +1,5 @@
+import { createMarkdownValueReader } from "./imagePath.js";
+
 function loadRes(url) {
     return fetch(url).then(r => r.text())
 }
@@ -244,7 +246,8 @@ const isInsideCodeMirrorTarget = (target) => {
     return !!node?.closest?.(".vditor-code-block--cm .cm-editor");
 };
 
-export const bindShortcut = (handler, editor) => {
+export const bindShortcut = (handler, editor, workspaceBaseUrl = '') => {
+    const getMarkdownValue = createMarkdownValueReader(() => editor, workspaceBaseUrl);
     let _exec = document.execCommand.bind(document)
     document.execCommand = (cmd, ...args) => {
         if (cmd === 'delete') {
@@ -266,7 +269,7 @@ export const bindShortcut = (handler, editor) => {
         if (isCompose(e)) {
             switch (e.code) {
                 case 'KeyS':
-                    vscodeEvent.emit("doSave", editor.getValue());
+                    vscodeEvent.emit("doSave", getMarkdownValue());
                     editor.markSaved();
                     e.stopPropagation();
                     e.preventDefault();
