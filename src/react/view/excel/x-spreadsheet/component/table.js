@@ -130,6 +130,9 @@ export function renderCell(draw, data, rindex, cindex, yoffset = 0) {
     if (isLocked) {
       draw.frozen(dbox, lockedColor);
     }
+    if (cell.note?.text) {
+      draw.note(dbox, getExcelThemeColor('--excel-note-indicator', '#d13438'));
+    }
   });
 }
 

@@ -92,6 +92,12 @@ export interface CellData {
     merge?: CellMerge;
     /** false 表示不可编辑（对应 Excel 锁定单元格） */
     editable?: boolean;
+    /** Legacy Excel note exposed for read-only display. */
+    note?: CellNoteData;
+}
+
+export interface CellNoteData {
+    text: string;
 }
 
 export interface RowData {

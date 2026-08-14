@@ -8,6 +8,11 @@ import { readWorksheetSortStateXml } from './excel_sort_state';
 import { excelJsCellToStyle, StyleRegistry } from './excel_styles';
 import { mergeHyperlinkMaps, readCellHyperlink } from './excel_hyperlink';
 import { readWorksheetBackgroundImage, readWorksheetImages } from './excel_images';
+import {
+    normalizeExcelJsNote,
+    readWorkbookNotes,
+    type WorkbookNotes,
+} from './excel_notes';
 import { readWorksheetValidations } from './excel_validation';
 import {
     isWorksheetProtected,
@@ -171,8 +176,7 @@ const applyRowHeight = (rows: RowMap, ri: number, excelRow: ExcelJS.Row) => {
     }
 };
 
-const readWorkbookSortStateXml = async (buffer: ArrayBuffer) => {
-    const zip = await JSZip.loadAsync(buffer);
+const readWorkbookSortStateXml = async (zip: JSZip) => {
     const entries = new Map<number, ReturnType<typeof readWorksheetSortStateXml>>();
     const worksheetFiles = Object.keys(zip.files)
         .map((name) => {
@@ -192,7 +196,11 @@ const readWorkbookSortStateXml = async (buffer: ArrayBuffer) => {
     return entries;
 };
 
-const convertExcelJsWorksheet = (worksheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbook): Pick<SheetData, 'rows' | 'cols' | 'styles' | 'merges' | 'freeze' | 'autofilter' | 'hyperlinks' | 'validations' | 'sheetProtection' | 'images' | 'backgroundImage'> => {
+const convertExcelJsWorksheet = (
+    worksheet: ExcelJS.Worksheet,
+    workbook: ExcelJS.Workbook,
+    readonlyNotes?: ReadonlyMap<string, NonNullable<CellData['note']>>,
+): Pick<SheetData, 'rows' | 'cols' | 'styles' | 'merges' | 'freeze' | 'autofilter' | 'hyperlinks' | 'validations' | 'sheetProtection' | 'images' | 'backgroundImage'> => {
     const rows: RowMap = {};
     const styleRegistry = new StyleRegistry();
     const hyperlinkParts: Record<string, { link: string; tooltip?: string }>[] = [];
@@ -213,12 +221,14 @@ const convertExcelJsWorksheet = (worksheet: ExcelJS.Worksheet, workbook: ExcelJS
             const cellStyle = excelJsCellToStyle(cell);
             const editable = readCellEditableFromExcel(cell, sheetProtected);
             const hl = readCellHyperlink(cell, ri, ci);
-            if (!text && !cellStyle && editable === undefined && !Object.keys(hl).length) return;
+            const note = readonlyNotes?.get(cell.address.toUpperCase()) ?? normalizeExcelJsNote(cell.note);
+            if (!text && !cellStyle && editable === undefined && !Object.keys(hl).length && !note) return;
 
             const styleIndex = styleRegistry.add(cellStyle);
             const cellData: CellData = { text };
             if (styleIndex != null) cellData.style = styleIndex;
             if (editable !== undefined) cellData.editable = editable;
+            if (note) cellData.note = note;
             cells[ci] = cellData;
             if (ci + 1 > maxCols) maxCols = ci + 1;
             if (ri + 1 > maxRow) maxRow = ri + 1;
@@ -228,6 +238,25 @@ const convertExcelJsWorksheet = (worksheet: ExcelJS.Worksheet, workbook: ExcelJS
             rows[ri] = { cells };
         }
         applyRowHeight(rows, ri, row);
+    });
+
+    readonlyNotes?.forEach((note, address) => {
+        let decoded: XLSX.CellAddress;
+        try {
+            decoded = XLSX.utils.decode_cell(address);
+        } catch {
+            return;
+        }
+        const existingRow = rows[decoded.r];
+        const targetRow = existingRow && typeof existingRow === 'object' && 'cells' in existingRow
+            ? existingRow
+            : { cells: {} };
+        const targetCell = targetRow.cells[decoded.c] ?? { text: '' };
+        targetCell.note = note;
+        targetRow.cells[decoded.c] = targetCell;
+        rows[decoded.r] = targetRow;
+        maxCols = Math.max(maxCols, decoded.c + 1);
+        maxRow = Math.max(maxRow, decoded.r + 1);
     });
 
     const rowCount = Math.max(maxRow, worksheet.rowCount || 0);
@@ -271,13 +300,14 @@ const convertExcelJsWorksheet = (worksheet: ExcelJS.Worksheet, workbook: ExcelJS
 const convertExcelJsWorkbook = (
     workbook: ExcelJS.Workbook,
     sortStateXmlMap?: Map<number, ReturnType<typeof readWorksheetSortStateXml>>,
+    notesBySheet?: WorkbookNotes,
 ): ExcelData => {
     const sheets: SheetData[] = [];
     let maxLength = 0;
     let maxCols = 26;
 
     workbook.worksheets.forEach((worksheet, index) => {
-        const converted = convertExcelJsWorksheet(worksheet, workbook);
+        const converted = convertExcelJsWorksheet(worksheet, workbook, notesBySheet?.get(worksheet.name));
         const xmlAutofilter = sortStateXmlMap?.get(index);
         if (xmlAutofilter?.sort && converted.autofilter?.ref) {
             converted.autofilter.sort = xmlAutofilter.sort;
@@ -309,9 +339,18 @@ const convertExcelJsWorkbook = (
 
 const loadWithExcelJs = async (buffer: ArrayBuffer): Promise<ExcelData> => {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const sortStateXmlMap = await readWorkbookSortStateXml(buffer);
-    return convertExcelJsWorkbook(workbook, sortStateXmlMap);
+    const [, zip] = await Promise.all([
+        workbook.xlsx.load(buffer),
+        JSZip.loadAsync(buffer),
+    ]);
+    const [sortStateXmlMap, notesBySheet] = await Promise.all([
+        readWorkbookSortStateXml(zip),
+        readWorkbookNotes(zip).catch((error) => {
+            console.warn(`Failed to read Excel notes: ${(error as Error).message}`);
+            return new Map();
+        }),
+    ]);
+    return convertExcelJsWorkbook(workbook, sortStateXmlMap, notesBySheet);
 };
 
 const sheetJsColWidthToPx = (col?: XLSX.ColInfo) => {
@@ -414,7 +453,7 @@ const loadWithSheetJs = (buffer: ArrayBuffer): ExcelData => {
 const loadCsv = (buffer: ArrayBuffer): ExcelData => {
     let maxCols = 26;
     const emptySheet = { maxCols, sheets: [{ name: 'Sheet1', rows: { len: 0 } }] };
-    let csvStr = decodeCsvBuffer(buffer);
+    const csvStr = decodeCsvBuffer(buffer);
     if (!csvStr) return emptySheet;
 
     try {

@@ -870,6 +870,7 @@
 		"diff-match-patch": "1.0.5",
 		"epubjs": "^0.3.93",
 		"file-type": "^19.6.0",
+		"fast-xml-parser": "4.5.7",
 		"heic2any": "^0.0.4",
 		"highlight.js": "^11.10.0",
 		"hyparquet": "^1.26.1",

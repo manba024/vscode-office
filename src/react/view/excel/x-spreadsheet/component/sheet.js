@@ -19,6 +19,7 @@ import ModalValidation from './modal_validation';
 import ModalHyperlink from './modal_hyperlink';
 import SortFilter from './sort_filter';
 import SheetImages from './sheet_images';
+import NoteTooltip from './note_tooltip';
 import { xtoast } from './message';
 import { cssPrefix } from '../config';
 import { formulaMenuItems } from '../core/formula';
@@ -148,6 +149,8 @@ function flushWheelPixelScroll() {
 }
 
 function overlayerMousescroll(evt) {
+  this.noteTooltip.hide();
+  this.hoveredNoteCell = null;
   if (document.activeElement?.tagName === 'TEXTAREA') {
     return;
   }
@@ -478,8 +481,16 @@ function overlayerOffset(sheet, evt) {
 
 function overlayerMousemove(evt) {
   // console.log('x:', evt.offsetX, ', y:', evt.offsetY);
-  if (evt.buttons !== 0) return;
-  if (evt.target.className === `${cssPrefix}-resizer-hover`) return;
+  if (evt.buttons !== 0) {
+    this.noteTooltip.hide();
+    this.hoveredNoteCell = null;
+    return;
+  }
+  if (evt.target.className === `${cssPrefix}-resizer-hover`) {
+    this.noteTooltip.scheduleHide();
+    this.hoveredNoteCell = null;
+    return;
+  }
   const { offsetX, offsetY } = overlayerOffset(this, evt);
   const {
     rowResizer, colResizer, tableEl, data,
@@ -494,8 +505,24 @@ function overlayerMousemove(evt) {
     } else {
       this.overlayerEl.el.style.cursor = '';
     }
+    const note = cRect.ri >= 0 && cRect.ci >= 0
+      ? data.getCell(cRect.ri, cRect.ci)?.note
+      : null;
+    if (note?.text) {
+      const noteCell = `${cRect.ri}:${cRect.ci}`;
+      this.noteTooltip.cancelHide();
+      if (this.hoveredNoteCell !== noteCell) {
+        this.hoveredNoteCell = noteCell;
+        this.noteTooltip.show(note, evt.clientX, evt.clientY);
+      }
+    } else {
+      this.hoveredNoteCell = null;
+      this.noteTooltip.scheduleHide();
+    }
     return;
   }
+  this.hoveredNoteCell = null;
+  this.noteTooltip.scheduleHide();
   this.overlayerEl.el.style.cursor = '';
   const tRect = tableEl.box();
   if (cRect.ri >= 0 && cRect.ci === -1) {
@@ -584,6 +611,8 @@ function sheetReset() {
     el,
   } = this;
   const tOffset = this.getTableOffset();
+  this.noteTooltip.hide();
+  this.hoveredNoteCell = null;
   const vRect = this.getRect();
   tableEl.attr(vRect);
   overlayerEl.offset(vRect);
@@ -800,6 +829,8 @@ function beginHeaderColDrag(sheet, evt, hitCi) {
 function overlayerMousedown(evt) {
   // console.log(':::::overlayer.mousedown:', evt.detail, evt.button, evt.buttons, evt.shiftKey);
   // console.log('evt.target.className:', evt.target.className);
+  this.noteTooltip.hide();
+  this.hoveredNoteCell = null;
   const {
     selector, data, table, sortFilter, sheetImages,
   } = this;
@@ -950,6 +981,8 @@ function editorSet() {
 }
 
 function verticalScrollbarMove(distance) {
+  this.noteTooltip.hide();
+  this.hoveredNoteCell = null;
   const { data, table, selector, verticalScrollbar } = this;
   data.scrolly(distance, () => {
     selector.resetBRLAreaOffset();
@@ -964,6 +997,8 @@ function verticalScrollbarMove(distance) {
 }
 
 function horizontalScrollbarMove(distance) {
+  this.noteTooltip.hide();
+  this.hoveredNoteCell = null;
   const { data, table, selector, horizontalScrollbar } = this;
   data.scrollx(distance, () => {
     selector.resetBRTAreaOffset();
@@ -1238,6 +1273,8 @@ function sheetInitEvents() {
       const { offsetX, offsetY } = evt;
       if (offsetY <= 0) colResizer.hide();
       if (offsetX <= 0) rowResizer.hide();
+      this.hoveredNoteCell = null;
+      this.noteTooltip.scheduleHide();
     });
 
   selector.inputChange = (v) => {
@@ -1502,6 +1539,7 @@ export default class Sheet {
     this.lastZoomWheelAt = 0;
     this.formulaEditTarget = null;
     this.editSnapshot = null;
+    this.hoveredNoteCell = null;
     const { view, showToolbar, showContextmenu } = data.settings;
     this.el = h('div', `${cssPrefix}-sheet`);
     this.toolbar = new Toolbar(data, view.width, !showToolbar);
@@ -1536,6 +1574,7 @@ export default class Sheet {
     // selector
     this.selector = new Selector(data);
     this.sheetImages = new SheetImages();
+    this.noteTooltip = new NoteTooltip();
     this.sheetImages.setOnChange(() => {
       this.trigger('change');
     });
@@ -1590,6 +1629,8 @@ export default class Sheet {
   resetData(data) {
     // before
     this.editor.clear();
+    this.noteTooltip.hide();
+    this.hoveredNoteCell = null;
     // after
     this.data = data;
     verticalScrollbarSet.call(this);
