@@ -7,6 +7,8 @@ import { emitFileOfficeOpen, emitVirtualOfficeOpen, isVirtualUri } from '@/provi
 
 const fileSaveTimes: Record<string, number> = {};
 const INTERNAL_SAVE_CHANGE_WINDOW_MS = 1500;
+const SPREADSHEET_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xls', '.csv', '.tsv', '.ods']);
+const SPREADSHEET_PREVIEW_ONLY_MESSAGE = '电子表格仅供预览，已禁止保存。请使用 yl-config / excel-xlsx 修改。';
 
 function buildDefaultXlsxUri(uri: Uri): Uri {
     const { dir, name } = parse(uri.fsPath);
@@ -33,6 +35,7 @@ function setDirty(handler: Handler, uri: Uri, dirty: boolean) {
 
 export function handleCommonEvent(uri: Uri, handler: Handler, options?: { skipOpen?: boolean }) {
     let readOnly = false;
+    const spreadsheetPreviewOnly = SPREADSHEET_EXTENSIONS.has(parse(uri.fsPath).ext.toLowerCase());
     const send = async () => {
         if (shouldSkipFileChange(uri)) {
             return;
@@ -57,6 +60,7 @@ export function handleCommonEvent(uri: Uri, handler: Handler, options?: { skipOp
             setDirty(handler, uri, true);
         })
         .on("save", async (content) => {
+            if (spreadsheetPreviewOnly) throw new Error(SPREADSHEET_PREVIEW_ONLY_MESSAGE);
             const res = Array.isArray(content) ? new Uint8Array(content) : new TextEncoder().encode(content)
             if (readOnly) {
                 handler.emit('saveAs', { content: [...res] });
@@ -69,6 +73,7 @@ export function handleCommonEvent(uri: Uri, handler: Handler, options?: { skipOp
             handler.emit("saveDone")
         })
         .on("saveAs", async (payload: { content: number[], ext?: string }) => {
+            if (spreadsheetPreviewOnly) throw new Error(SPREADSHEET_PREVIEW_ONLY_MESSAGE);
             const res = new Uint8Array(payload.content);
             const ext = (payload.ext ?? 'xlsx').toLowerCase();
             const { dir, name } = parse(uri.fsPath);
