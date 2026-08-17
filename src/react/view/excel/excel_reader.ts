@@ -340,7 +340,9 @@ const convertExcelJsWorkbook = (
 const loadWithExcelJs = async (buffer: ArrayBuffer): Promise<ExcelData> => {
     const workbook = new ExcelJS.Workbook();
     const [, zip] = await Promise.all([
-        workbook.xlsx.load(buffer),
+        // Preview never writes validation rules. Ignoring them also prevents ExcelJS from
+        // expanding whole-column ranges into millions of per-cell objects while loading.
+        workbook.xlsx.load(buffer, { ignoreNodes: ['dataValidations'] }),
         JSZip.loadAsync(buffer),
     ]);
     const [sortStateXmlMap, notesBySheet] = await Promise.all([

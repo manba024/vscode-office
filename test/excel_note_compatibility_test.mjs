@@ -28,6 +28,24 @@ function toArrayBuffer(buffer) {
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 }
 
+async function addLargeSparseValidation(buffer) {
+    const zip = await JSZip.loadAsync(buffer);
+    const worksheetPath = 'xl/worksheets/sheet1.xml';
+    const worksheetXml = await zip.file(worksheetPath)?.async('string');
+    assert.ok(worksheetXml);
+    assert.equal(worksheetXml.includes('<dataValidations'), false);
+
+    const validationXml = [
+        '<dataValidations count="1">',
+        '<dataValidation type="list" allowBlank="1" sqref="A1:A1000 A1002:A2000">',
+        '<formula1>"one,two"</formula1>',
+        '</dataValidation>',
+        '</dataValidations>',
+    ].join('');
+    zip.file(worksheetPath, worksheetXml.replace('</worksheet>', `${validationXml}</worksheet>`));
+    return zip.generateAsync({ type: 'nodebuffer' });
+}
+
 test('reads traditional notes written by OpenPyXL', async () => {
     const workbook = await loadWorkbook(await readFile(OPENPYXL_FIXTURE));
     const worksheet = workbook.getWorksheet('Notes');
@@ -44,6 +62,17 @@ test('projects traditional notes into read-only spreadsheet cell data', async ()
     assert.deepEqual(worksheet.rows?.[0]?.cells[0]?.note, { text: 'OpenPyXL note' });
     assert.deepEqual(worksheet.rows?.[2]?.cells[2]?.note, { text: 'Note on empty cell' });
     assert.equal(countWorkbookNotes(data.sheets), 2);
+});
+
+test('ignores large sparse data validations in read-only preview', async () => {
+    const source = await readFile(OPENPYXL_FIXTURE);
+    const buffer = await addLargeSparseValidation(source);
+    const data = await readExcel(toArrayBuffer(buffer));
+    const worksheet = data.sheets.find((sheet) => sheet.name === 'Notes');
+
+    assert.ok(worksheet);
+    assert.equal(worksheet.validations?.length ?? 0, 0);
+    assert.deepEqual(worksheet.rows?.[0]?.cells[0]?.note, { text: 'OpenPyXL note' });
 });
 
 test('renders a note indicator for cells with read-only note data', () => {
