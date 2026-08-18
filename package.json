@@ -1,9 +1,9 @@
 {
-	"name": "vscode-office",
-	"displayName": "Office Viewer",
+	"name": "vscode-office-yl-preview",
+	"displayName": "Office Viewer (YLM Preview)",
 	"description": "View word, excel, powerpoint files and using WYSIWYG editor for markdown.",
-	"version": "4.1.9",
-	"publisher": "cweijan",
+	"version": "1.0.0",
+	"publisher": "riverdai",
 	"icon": "image/logo.png",
 	"engines": {
 		"vscode": "^1.64.0"
