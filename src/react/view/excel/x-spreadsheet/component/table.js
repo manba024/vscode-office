@@ -144,8 +144,10 @@ function renderAutofilter(viewRange) {
     const afRange = autoFilter.hrange();
     if (viewRange.intersects(afRange)) {
       afRange.each((ri, ci) => {
-        const dbox = getDrawBox(data, ri, ci);
-        draw.dropdown(dbox);
+        if (viewRange.includes(ri, ci)) {
+          const dbox = getDrawBox(data, ri, ci);
+          draw.dropdown(dbox);
+        }
       });
     }
   }

@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type Spreadsheet from './x-spreadsheet/index';
 import type { FindMatch, FindOptions } from './x-spreadsheet/index';
+import { stringAt } from './x-spreadsheet/core/alphabet';
 import { t } from './excel_i18n';
 
 export interface FindReplacePanelProps {
@@ -79,7 +80,7 @@ const FindReplacePanel = forwardRef<FindReplacePanelHandle, FindReplacePanelProp
         }
         spreadSheet.gotoMatch(match);
         lastMatchRef.current = match;
-        const col = String.fromCharCode(65 + (match.ci % 26));
+        const col = stringAt(match.ci);
         setStatus({
             text: t('findReplace.matchLocation', match.sheetIndex + 1, col, match.ri + 1),
         });

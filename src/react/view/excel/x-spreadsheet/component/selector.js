@@ -59,7 +59,7 @@ class SelectorElement {
     if (this.useHideInput) {
       this.hideInputDiv.offset(of);
       if (this.autoFocus) {
-        this.hideInput.val('').focus();
+        this.hideInput.val('').focus({ preventScroll: true });
       } else {
         this.hideInput.val('');
       }

@@ -227,8 +227,8 @@ class Element {
     return this.el.value;
   }
 
-  focus() {
-    this.el.focus();
+  focus(options) {
+    this.el.focus(options);
   }
 
   cssRemoveKeys(...keys) {
