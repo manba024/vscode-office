@@ -11,6 +11,7 @@ import { renderCell } from '../src/react/view/excel/x-spreadsheet/component/tabl
 
 const OPENPYXL_FIXTURE = path.join(process.cwd(), 'test/fixtures/excel/openpyxl-note.xlsx');
 const EXTERNAL_SAMPLE = process.env.EXCEL_NOTE_SAMPLE;
+const EXTERNAL_FORMULA_SAMPLE = process.env.EXCEL_FORMULA_SAMPLE;
 
 function noteText(note) {
     if (typeof note === 'string') return note;
@@ -75,6 +76,71 @@ test('ignores large sparse data validations in read-only preview', async () => {
     assert.deepEqual(worksheet.rows?.[0]?.cells[0]?.note, { text: 'OpenPyXL note' });
 });
 
+test('uses the cached result when previewing a formula cell', async () => {
+    const source = new ExcelJS.Workbook();
+    const worksheet = source.addWorksheet('Formula');
+    worksheet.getCell('BB2').value = {
+        formula: 'INT(VLOOKUP($BA2,EXP,2,FALSE)*IF($Y2="",1,VLOOKUP($Y2,品质系数,2,FALSE)))',
+        result: 205,
+    };
+    worksheet.getCell('BC2').value = { formula: '0', result: 0 };
+    worksheet.getCell('BD2').value = { formula: '1+1' };
+
+    const spreadsheet = await readExcel(toArrayBuffer(await source.xlsx.writeBuffer()));
+    assert.equal(spreadsheet.sheets[0].rows?.[1]?.cells[53]?.text, '205');
+    assert.equal(spreadsheet.sheets[0].rows?.[1]?.cells[54]?.text, '0');
+    assert.equal(spreadsheet.sheets[0].rows?.[1]?.cells[55]?.text, '=1+1');
+});
+
+test('shows formula text without evaluating it', () => {
+    const previousDocument = globalThis.document;
+    const previousGetComputedStyle = globalThis.getComputedStyle;
+    globalThis.document = {
+        querySelector: () => null,
+        documentElement: {},
+    };
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
+
+    try {
+        let renderedText;
+        const cell = { text: '' };
+        const draw = {
+            rect: (_box, callback) => callback(),
+            text: (text) => { renderedText = text; },
+            error: () => {},
+            frozen: () => {},
+            strokeBorders: () => {},
+        };
+        const data = {
+            rows: { isHide: () => false, getCell: () => ({ text: '' }) },
+            cols: { isHide: () => false },
+            getCell: () => cell,
+            canEditCell: () => true,
+            getCellStyleOrDefault: () => ({ font: { name: 'Arial', size: 11 } }),
+            defaultStyle: () => ({ font: { name: 'Arial', size: 11 } }),
+            cellRect: () => ({ left: 0, top: 0, width: 100, height: 30 }),
+            getZoomScale: () => 1,
+            getHyperlink: () => undefined,
+            getValidationError: () => undefined,
+            sortedRowMap: new Map(),
+            merges: null,
+        };
+
+        const formulas = [
+            '=1+1',
+            '=INT(VLOOKUP($BA2,EXP,2,FALSE)*IF($Y2="",1,VLOOKUP($Y2,品质系数,2,FALSE)))',
+        ];
+        formulas.forEach((formula) => {
+            cell.text = formula;
+            assert.doesNotThrow(() => renderCell(draw, data, 0, 0));
+            assert.equal(renderedText, formula);
+        });
+    } finally {
+        globalThis.document = previousDocument;
+        globalThis.getComputedStyle = previousGetComputedStyle;
+    }
+});
+
 test('renders a note indicator for cells with read-only note data', () => {
     const previousDocument = globalThis.document;
     const previousGetComputedStyle = globalThis.getComputedStyle;
@@ -108,7 +174,6 @@ test('renders a note indicator for cells with read-only note data', () => {
             getValidationError: () => undefined,
             sortedRowMap: new Map(),
             merges: null,
-            settings: { evalPaused: true },
         };
 
         renderCell(draw, data, 0, 0);
@@ -181,5 +246,16 @@ if (EXTERNAL_SAMPLE) {
 
         const spreadsheet = await readExcel(toArrayBuffer(buffer));
         assert.equal(countWorkbookNotes(spreadsheet.sheets), noteCount);
+    });
+}
+
+if (EXTERNAL_FORMULA_SAMPLE) {
+    test('previews the cached BB2 result from the external formula workbook', async () => {
+        const spreadsheet = await readExcel(toArrayBuffer(await readFile(EXTERNAL_FORMULA_SAMPLE)));
+        const worksheet = spreadsheet.sheets.find((sheet) => sheet.name === 'CS_怪物属性');
+
+        assert.ok(worksheet);
+        assert.equal(worksheet.rows?.[1]?.cells[53]?.text, '205');
+        assert.equal(worksheet.rows?.[1]?.cells[55]?.text, '0');
     });
 }

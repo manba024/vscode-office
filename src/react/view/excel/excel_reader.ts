@@ -125,11 +125,13 @@ const formatCellText = (cell: ExcelJS.Cell) => {
         const hv = raw as ExcelJS.CellHyperlinkValue;
         return hv.text || hv.hyperlink || '';
     }
-    if (cell.formula) return `=${cell.formula}`;
-    const value = cell.value;
-    if (value && typeof value === 'object' && 'formula' in value) {
-        const formula = (value as { formula?: string }).formula;
-        if (formula) return `=${formula}`;
+    if (cell.formula) {
+        const result = cell.result;
+        if (result !== undefined && result !== null) {
+            if (typeof result === 'object' && 'error' in result) return String(result.error);
+            return String(result);
+        }
+        return `=${cell.formula}`;
     }
     if (cell.value == null) return '';
     if (cell.text) return cell.text;
